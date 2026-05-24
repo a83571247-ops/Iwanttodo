@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>깃허브 마리오 게임</title>
+    <title>마인크래프트 지형의 마리오 게임</title>
     <style>
         body {
             margin: 0;
@@ -14,118 +14,57 @@
             align-items: center;
             height: 100vh;
             overflow: hidden;
-            font-family: Arial, sans-serif;
         }
         canvas {
-            background-color: #5c94fc; /* 마리오 특유의 하늘색 배경 */
+            background-color: #74b9ff; /* 마리오 하늘색 배경 */
             border: 4px solid #fff;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            image-rendering: pixelated; /* 픽셀 아트 느낌 강조 */
+            image-rendering: pixelated; /* 픽셀 아트 스타일 강조 */
         }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas" width="800" height="400"></canvas>
+<canvas id="gameCanvas" width="800" height="480"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // 게임 설정
-const GRAVITY = 0.5;
+const GRAVITY = 0.6;
+const BLOCK_SIZE = 32; // 각 블록의 크기 (32x32 픽셀)
+const COLS = canvas.width / BLOCK_SIZE; // 25칸
+const ROWS = canvas.height / BLOCK_SIZE; // 15칸
 
-// 마리오 캐릭터 객체 (픽셀 스타일 사각형)
-const mario = {
-    x: 50,
-    y: 300,
-    width: 30,
-    height: 40,
-    color: '#e60012', // 마리오 빨간색
-    dx: 0,
-    dy: 0,
-    speed: 4,
-    jumpForce: 10,
-    grounded: false
+// 블록 종류별 색상 정의 (마인크래프트 스타일 픽셀)
+const BLOCK_TYPES = {
+    DIRT: { main: '#866043', detail: '#573d26' },
+    STONE: { main: '#737373', detail: '#525252' },
+    COAL: { main: '#737373', detail: '#1c1c1c' },
+    DIAMOND: { main: '#737373', detail: '#4dedf4' }
 };
 
-// 바닥 배열
-const platforms = [
-    { x: 0, y: 360, width: 800, height: 40, color: '#fcb444' } // 픽셀 느낌의 갈색 바닥
-];
+// 지형 맵 배열 생성 (2차원 배열)
+const map = [];
 
-// 키보드 입력 상태 저장
-const keys = {
-    ArrowRight: false,
-    ArrowLeft: false,
-    ArrowUp: false
-};
+// 요청하신 규칙대로 5개 층 지형 생성
+for (let r = 0; r < ROWS; r++) {
+    map[r] = [];
+    for (let c = 0; c < COLS; c++) {
+        // 밑에서부터 5개 층 계산 (ROWS-5 부터 ROWS-1 까지)
+        let groundLevel = ROWS - r; 
 
-// 이벤트 리스너 (요청하신 방향키 설정)
-window.addEventListener('keydown', (e) => {
-    if (e.key in keys) {
-        keys[e.key] = true;
-        // 위쪽 방향키를 누르고 바닥에 있을 때만 점프
-        if (e.key === 'ArrowUp' && mario.grounded) {
-            mario.dy = -mario.jumpForce;
-            mario.grounded = false;
-        }
-    }
-});
-
-window.addEventListener('keyup', (e) => {
-    if (e.key in keys) {
-        keys[e.key] = false;
-    }
-});
-
-// 업데이트 루프
-function update() {
-    // 좌우 이동 처리
-    if (keys.ArrowRight) {
-        mario.dx = mario.speed;
-    } else if (keys.ArrowLeft) {
-        mario.dx = -mario.speed;
-    } else {
-        mario.dx = 0;
-    }
-
-    // 중력 적용
-    mario.dy += GRAVITY;
-
-    // 위치 업데이트
-    mario.x += mario.dx;
-    mario.y += mario.dy;
-
-    // 화면 외곽 이탈 방지 (좌우)
-    if (mario.x < 0) mario.x = 0;
-    if (mario.x + mario.width > canvas.width) mario.x = canvas.width - mario.width;
-
-    // 바닥 충돌 체크
-    mario.grounded = false;
-    for (let plat of platforms) {
-        if (mario.x < plat.x + plat.width &&
-            mario.x + mario.width > plat.x &&
-            mario.y + mario.height > plat.y &&
-            mario.y + mario.height - mario.dy <= plat.y) {
-            
-            mario.y = plat.y - mario.height;
-            mario.dy = 0;
-            mario.grounded = true;
-        }
-    }
-}
-
-// 그리기 루프
-function draw() {
-    // 화면 초기화
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 1. 배경 그리기 (하늘색은 CSS에서 처리, 여기서는 간단한 픽셀 구름 느낌 추가 가능)
-    // 픽셀 느낌의 태양/구름 대용 사각형
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(600, 50, 80, 40); 
-
-    // 2. 바닥 그리기
-    for (let plat of platforms) {
-        ctx
+        if (groundLevel === 5 || groundLevel === 4) {
+            // 밑에서 5번째, 4번째 줄: 흙
+            map[r][c] = 'DIRT';
+        } else if (groundLevel === 3) {
+            // 밑에서 3번째 줄: 돌
+            map[r][c] = 'STONE';
+        } else if (groundLevel === 2) {
+            // 밑에서 2번째 줄: 돌 + 석탄 무작위 (석탄 확률 30%)
+            map[r][c] = Math.random() < 0.3 ? 'COAL' : 'STONE';
+        } else if (groundLevel === 1) {
+            // 맨 밑줄: 돌 + 석탄 + 다이아몬드 무작위 (다이아 10%, 석탄 20%)
+            let rand = Math.random();
+            if (rand < 0.1) map[r][c] = 'DIAM
