@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>피카츄 마인크래프트 - 서바이벌 완벽 수정본</title>
+    <title>피카츄 마인크래프트 - 서바이벌 최종 수정본</title>
     <style>
         body {
             margin: 0;
@@ -16,50 +16,47 @@
             overflow: hidden;
         }
         canvas {
-            background-color: #74b9ff; /* 하늘색 배경 */
-            border: 6px solid #fff;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            background-color: #74b9ff; /* 월드 기본 하늘색 배경 */
+            border: 4px solid #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.6);
             image-rendering: pixelated;
         }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas" width="2000" height="1500"></canvas>
+<canvas id="gameCanvas" width="1200" height="800"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 환경 설정 ---
+// --- 1. 월드 및 블록 환경 설정 ---
 const BLOCK_SIZE = 60; 
 const GRAVITY = 0.6;
-const GROUND_START_ROW = 12; // 지표면이 시작되는 맵의 Y축 행 번호
+const GROUND_START_ROW = 8; // 화면 중앙 부근에서 지표면이 시작되도록 설정
 
-// 블록 색상 디자인 정의
 const BLOCK_TYPES = {
-    GRASS:   { main: '#2ecc71', detail: '#27ae60' }, // 최상단 레이어 전용 순수 초록 잔디
+    GRASS:   { main: '#2ecc71', detail: '#27ae60' }, // 최상단 레이어 전용 순수 잔디블록
     DIRT:    { main: '#866043', detail: '#573d26' }, // 일반 흙
     STONE:   { main: '#737373', detail: '#525252' }, // 돌
     COAL:    { main: '#3c3c3c', detail: '#111111' }, // 석탄
     DIAMOND: { main: '#6d8a8c', detail: '#4dedf4' }  // 다이아몬드
 };
 const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
-
 const worldMap = {}; 
 
-// 무한 월드 블록 스폰 함수
+// 블록 데이터를 안전하게 불러오는 함수 (무한 월드 기틀)
 function getBlock(r, c) {
     if (r >= GROUND_START_ROW) {
         const key = `${r},${c}`;
         if (worldMap[key] === undefined) {
             if (r === GROUND_START_ROW) {
-                // 맨 위 블록은 무조건 초록색깔 잔디블록으로만 구성하도록 고정
+                // 맨 위 줄은 무조건 예외없이 온전한 초록색 잔디 블록으로 고정
                 worldMap[key] = { type: BLOCK_TYPES.GRASS, damage: 0 };
             } else if (r === GROUND_START_ROW + 1) {
                 worldMap[key] = { type: BLOCK_TYPES.DIRT, damage: 0 };
             } else {
-                // 3번째 줄 이하부터 무작위 광물 및 돌 배치
                 const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
                 worldMap[key] = { type: BLOCK_TYPES[randomType], damage: 0 };
             }
@@ -69,10 +66,10 @@ function getBlock(r, c) {
     return null;
 }
 
-// --- 2. 캐릭터 데이터 (정면 피카츄 및 마인크래프트 스탯) ---
+// --- 2. 플레이어 캐릭터 및 서바이벌 스탯 ---
 const player = {
-    x: 1000, // 캔버스 가로 중앙 스폰
-    y: (GROUND_START_ROW * BLOCK_SIZE) - 150, // 지표면 바로 위 안전 스폰
+    x: 600, // 화면 중심 스폰
+    y: (GROUND_START_ROW * BLOCK_SIZE) - 60, // 지표면 바로 위 스폰
     baseWidth: 50,
     baseHeight: 55,
     width: 50,
@@ -80,36 +77,37 @@ const player = {
     color: '#FFDE00',
     dx: 0,
     dy: 0,
-    speed: 6,
-    jumpForce: 12.5,
+    speed: 5.5,
+    jumpForce: 12,
     grounded: false,
     isCrouching: false,
     
-    // 서바이벌 시스템 변수 설정
-    health: 13,        // 13칸의 목숨칸
-    hunger: 13,        // 13칸의 배고픔칸
-    highestY: 0        // 낙하 대미지 계산용 공중 최고점 기록 변수
+    // 요청 사항: 각각 고정 13칸 스탯
+    health: 13,        
+    hunger: 13,        
+    highestY: 0        // 낙하 높이 정밀 측정을 위한 변수
 };
 
-// [배고픔 타이머 조건] 3분에 반 칸(0.5)씩 닳음
+// [배고픔 감소 시스템] 게임 실행 후 3분마다 정확히 반 칸(0.5)씩 감소
 setInterval(() => {
     if (player.hunger > 0) {
         player.hunger -= 0.5;
         if (player.hunger < 0) player.hunger = 0;
     }
-}, 3 * 60 * 1000); // 3분 = 180,000 밀리초
+}, 3 * 60 * 1000); // 3분 = 180,000ms
 
-// --- 3. 카메라 시스템 ---
+// --- 3. 카메라 포커스 시스템 ---
 const camera = {
     x: 0,
     y: 0,
     update: function() {
+        // 플레이어가 화면 중심을 벗어나지 않도록 스무스하게 추적
         this.x = player.x - canvas.width / 2 + player.width / 2;
         this.y = player.y - canvas.height / 2 + player.height / 2;
     }
 };
 
-// --- 4. 키보드 조작 및 마우스 입력 ---
+// --- 4. 키보드 조작 및 마우스 채굴 등록 ---
 const keys = { w: false, a: false, s: false, d: false, ' ': false, shift: false };
 const mouse = { isDown: false, worldX: 0, worldY: 0 };
 
@@ -123,7 +121,7 @@ window.addEventListener('keydown', (e) => {
         if ((key === 'w' || key === ' ') && player.grounded) {
             player.dy = -player.jumpForce;
             player.grounded = false;
-            player.highestY = player.y; // 점프 순간의 높이를 최고점으로 기록 시작
+            player.highestY = player.y; // 뛰어오른 시점의 높이 기록 시작
         }
         if (key === 'shift') player.isCrouching = true;
     }
@@ -156,37 +154,36 @@ function checkCollision(p, b) {
     return p.x < b.x + b.width && p.x + p.width > b.x && p.y < b.y + b.height && p.y + p.height > b.y;
 }
 
-// --- 5. 실시간 게임 엔진 업데이트 ---
+// --- 5. 게임 물리 연산 루프 ---
 function update() {
-    // 웅크리기 제어
+    // 웅크리기 물리 크기 변경
     if (player.isCrouching) {
-        player.height = player.baseHeight * 0.7;
-        player.speed = 3.5;
+        player.height = player.baseHeight * 0.75;
+        player.speed = 3.2;
     } else {
         player.height = player.baseHeight;
-        player.speed = 6;
+        player.speed = 5.5;
     }
 
-    // 좌우 이동
+    // 좌우 이동 대입
     if (keys.d) player.dx = player.speed;
     else if (keys.a) player.dx = -player.speed;
     else player.dx = 0;
 
-    // 중력 적용
     player.dy += GRAVITY;
 
-    // 공중에 떠 있는 상태라면 계속해서 최고 높은 지점(Y축 값이 가장 작을 때)을 추적 갱신
+    // 공중에 떠 있는 낙하 도중 최고 도달점 실시간 기억 (Y값은 작을수록 높은 곳)
     if (!player.grounded && player.y < player.highestY) {
         player.highestY = player.y;
     }
 
-    // 캐릭터 주변 안전 반경 블록만 연산 (성능 저하 및 튕김 방지)
-    const startRow = Math.floor((player.y - 400) / BLOCK_SIZE);
-    const endRow = Math.floor((player.y + 400) / BLOCK_SIZE);
-    const startCol = Math.floor((player.x - 400) / BLOCK_SIZE);
-    const endCol = Math.floor((player.x + 400) / BLOCK_SIZE);
+    // 연산 에러를 유발하지 않도록 안정한 상향식 탐색 가동 범위 설정
+    const startRow = Math.floor((player.y - 500) / BLOCK_SIZE);
+    const endRow = Math.floor((player.y + 500) / BLOCK_SIZE);
+    const startCol = Math.floor((player.x - 600) / BLOCK_SIZE);
+    const endCol = Math.floor((player.x + 600) / BLOCK_SIZE);
 
-    // X축 충돌 처리
+    // X축 이동 및 지형 충돌
     player.x += player.dx;
     for (let r = startRow; r <= endRow; r++) {
         for (let c = startCol; c <= endCol; c++) {
@@ -201,7 +198,7 @@ function update() {
         }
     }
 
-    // Y축 충돌 처리 및 낙하 데미지 계산
+    // Y축 이동 및 지형 충돌 + 낙하 데미지 정밀 연산
     const wasInAir = !player.grounded;
     player.y += player.dy;
     player.grounded = false;
@@ -212,22 +209,22 @@ function update() {
             if (block) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dy > 0) { // 아래로 떨어지다 착지했을 때
+                    if (player.dy > 0) { // 하강 착지
                         player.y = blockObj.y - player.height;
                         player.dy = 0;
                         player.grounded = true;
 
-                        // [낙하 데미지 조건] 공중에 있다가 착지한 순간 낙하 거리 연산
+                        // [낙하 데미지 연산] 공중에 머물다 막 착지한 상태 검증
                         if (wasInAir) {
                             const fallDistance = player.y - player.highestY;
-                            // 블록 1칸당 60px이므로 5칸 이상 = 300px 이상 추락한 경우
+                            // 5칸 이상 낙하 시 (5칸 × 60px = 300px 이상 추락)
                             if (fallDistance >= 300) {
-                                player.health -= 1; // 목숨 1칸 차감
+                                player.health -= 1; // 목숨 1칸 실시간 차감
                                 if (player.health < 0) player.health = 0;
                             }
-                            player.highestY = player.y; // 착지했으므로 기록 초기화
+                            player.highestY = player.y; // 착지 완결 후 초기화
                         }
-                    } else if (player.dy < 0) { // 머리가 천장에 부딪힘
+                    } else if (player.dy < 0) { // 상승 천장 부딪힘
                         player.y = blockObj.y + blockObj.height;
                         player.dy = 0;
                     }
@@ -238,78 +235,212 @@ function update() {
 
     camera.update();
 
-    // 마우스 실시간 블록 부수기
+    // 마우스 실시간 클릭 블록 채굴 파괴
     if (mouse.isDown) {
         let targetR = Math.floor(mouse.worldY / BLOCK_SIZE);
         let targetC = Math.floor(mouse.worldX / BLOCK_SIZE);
         const activeBlock = getBlock(targetR, targetC);
         if (activeBlock) {
             activeBlock.damage += 1;
-            if (activeBlock.damage >= 25) { // 내구도 한계 도달 시 파괴
+            if (activeBlock.damage >= 22) { // 타격 횟수 한계점 도달 시 파괴
                 worldMap[`${targetR},${targetC}`] = null;
             }
         }
     }
 }
 
-// --- 6. 그래픽 렌더링 화면 드로우 ---
+// --- 6. 렌더링 화면 그래픽 드로우 ---
 function draw() {
-    // 이전 화면 깨끗하게 지우기
+    // 캔버스 잔상 제거
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // [카메라 스크롤 뷰 스페이스 변환]
+    // [카메라 매트릭스 변환 레이어 시작]
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    // 에러를 유발하던 무한 변수 연산을 제거하고, 화면 픽셀 기준으로 렌더링 영역을 안전하게 고정 계산
-    const viewStartRow = Math.max(0, Math.floor(camera.y / BLOCK_SIZE) - 2);
-    const viewEndRow = viewStartRow + Math.ceil(canvas.height / BLOCK_SIZE) + 4;
-    const viewStartCol = Math.floor(camera.x / BLOCK_SIZE) - 2;
-    const viewEndCol = viewStartCol + Math.ceil(canvas.width / BLOCK_SIZE) + 4;
+    // 무한루프 및 하늘색 버그를 유발하던 유동 스크롤 계산 대신 플레이어 중심 주변 안전 격자 영역을 그려 화면 출력 확실하게 보장
+    const drawStartRow = Math.max(0, Math.floor((player.y - 600) / BLOCK_SIZE));
+    const drawEndRow = Math.floor((player.y + 600) / BLOCK_SIZE);
+    const drawStartCol = Math.floor((player.x - 800) / BLOCK_SIZE);
+    const drawEndCol = Math.floor((player.x + 800) / BLOCK_SIZE);
 
-    // 지형 블록 그리기
-    for (let r = viewStartRow; r <= viewEndRow; r++) {
-        for (let c = viewStartCol; c <= viewEndCol; c++) {
+    for (let r = drawStartRow; r <= drawEndRow; r++) {
+        for (let c = drawStartCol; c <= drawEndCol; c++) {
             const blockData = getBlock(r, c);
             if (blockData) {
                 const block = blockData.type;
                 const bx = c * BLOCK_SIZE;
                 const by = r * BLOCK_SIZE;
 
-                // 기본 블록 색상
+                // 블록 배경색
                 ctx.fillStyle = block.main;
                 ctx.fillRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 블록 픽셀 무늬 디테일
+                // 블록 마인크래프트풍 픽셀 무늬 효과
                 ctx.fillStyle = block.detail;
-                ctx.fillRect(bx + 12, by + 12, 10, 10);
-                ctx.fillRect(bx + 36, by + 36, 12, 10);
+                ctx.fillRect(bx + 12, by + 10, 12, 10);
+                ctx.fillRect(bx + 35, by + 35, 12, 10);
 
-                // 연한 아웃라인 경계선
-                ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-                ctx.lineWidth = 1.5;
+                // 격자 테두리 윤곽선
+                ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                ctx.lineWidth = 1;
                 ctx.strokeRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 채굴 중인 블록의 균열 금 표기
+                // 채굴 균열 금 표기
                 if (blockData.damage > 0) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + 55, by + 55);
+                    ctx.moveTo(bx + 6, by + 6); ctx.lineTo(bx + 54, by + 54);
                     ctx.stroke();
                 }
             }
         }
     }
 
-    // 정면 방향 피카츄 그리기
+    // 정면 피카츄 캐릭터 디자인 드로잉
     ctx.save();
     ctx.translate(player.x, player.y);
-    const hRatio = player.height / player.baseHeight;
+    const ratioY = player.height / player.baseHeight;
 
-    ctx.fillStyle = player.color; // 몸체 바디
-    ctx.fillRect(0, 14 * hRatio, player.width, player.height - (14 * hRatio));
+    ctx.fillStyle = player.color; // 몸통 바디
+    ctx.fillRect(0, 14 * ratioY, player.width, player.height - (14 * ratioY));
 
-    ctx.fillStyle = '#573d26'; // 양 옆구리 갈색 줄무늬 흔적
-    ctx.fillRect(0, 26 * hRatio, 3, 6 * hRatio);
-    ctx.fillRect(player.width - 3
+    ctx.fillStyle = '#573d26'; // 양쪽 줄무늬 데코 조각
+    ctx.fillRect(0, 26 * ratioY, 3, 6 * ratioY);
+    ctx.fillRect(player.width - 3, 26 * ratioY, 3, 6 * ratioY);
+
+    ctx.fillStyle = player.color; // 양쪽 세운 귀
+    ctx.fillRect(4, 0, 10, 14 * ratioY);
+    ctx.fillRect(player.width - 14, 0, 10, 14 * ratioY);
+    ctx.fillStyle = '#000'; // 귀 끝 검은색 마감
+    ctx.fillRect(4, 0, 10, 5 * ratioY);
+    ctx.fillRect(player.width - 14, 0, 10, 5 * ratioY);
+
+    if (player.isCrouching) {
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 3.5; ctx.beginPath();
+        ctx.moveTo(8, 22 * ratioY); ctx.lineTo(16, 22 * ratioY);
+        ctx.moveTo(player.width - 16, 22 * ratioY); ctx.lineTo(player.width - 8, 22 * ratioY);
+        ctx.stroke();
+    } else {
+        ctx.fillStyle = '#000'; // 초롱초롱한 양눈
+        ctx.fillRect(9, 21 * ratioY, 6, 6);
+        ctx.fillRect(player.width - 15, 21 * ratioY, 6, 6);
+    }
+
+    ctx.fillStyle = '#FF0000'; // 빨간 볼터치 픽셀
+    ctx.fillRect(2, 30 * ratioY, 8, 8 * ratioY);
+    ctx.fillRect(player.width - 10, 30 * ratioY, 8, 8 * ratioY);
+
+    ctx.restore();
+    ctx.restore(); // [카메라 레이어 종료 및 완전 복구 완료]
+
+    // --- 7. 상단 오른쪽 고정 마인크래프트 오리지널 디자인 UI 그리기 ---
+    drawMinecraftUI();
+}
+
+// 고유 픽셀 스타일 UI 배치 함수
+function drawMinecraftUI() {
+    const slotSpacing = 28;           // UI 컴포넌트 간의 가로 간격
+    const totalUiWidth = 13 * slotSpacing; 
+    const uiStartX = canvas.width - totalUiWidth - 25; // 캔버스 가로 우측 기준선 배치 정렬
+    const uiStartY = 25;
+
+    // A. 마인크래프트 레드 하트 목숨칸 (총 13칸 정렬)
+    for (let i = 0; i < 13; i++) {
+        const hx = uiStartX + (i * slotSpacing);
+        const hy = uiStartY;
+
+        // 하트 기본 검은색 테두리 아웃라인 형성
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(hx + 4, hy, 8, 3);
+        ctx.fillRect(hx + 12, hy, 8, 3);
+        ctx.fillRect(hx, hy + 3, 24, 7);
+        ctx.fillRect(hx + 2, hy + 10, 20, 3);
+        ctx.fillRect(hx + 5, hy + 13, 14, 3);
+        ctx.fillRect(hx + 10, hy + 16, 4, 3);
+
+        // 빈 상태일 때 안쪽에 채워질 회색 배경 도트
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(hx + 5, hy + 2, 3, 1);
+        ctx.fillRect(hx + 13, hy + 2, 3, 1);
+        ctx.fillRect(hx + 2, hy + 5, 20, 4);
+        ctx.fillRect(hx + 4, hy + 9, 16, 3);
+
+        // 현재 생명 수치 잔여량 검사 후 빨간색 하트 점등 채우기
+        if (i < player.health) {
+            ctx.fillStyle = '#ff2222';
+            ctx.fillRect(hx + 4, hy, 8, 3);
+            ctx.fillRect(hx + 12, hy, 8, 3);
+            ctx.fillRect(hx, hy + 3, 24, 7);
+            ctx.fillRect(hx + 2, hy + 10, 20, 3);
+            ctx.fillRect(hx + 5, hy + 13, 14, 3);
+            ctx.fillRect(hx + 10, hy + 16, 4, 3);
+
+            // 마인크래프트 원본 특유의 좌측 상단 반사광 흰색 픽셀 포인트 고증
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(hx + 4, hy + 3, 2, 2);
+            ctx.fillRect(hx + 6, hy + 1, 2, 2);
+
+            // 중앙선 복원 가이드
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(hx + 11, hy + 3, 2, 3);
+        }
+    }
+
+    // B. 마인크래프트 구운 고기 배고픔칸 (목숨칸 바로 밑단에 총 13칸 정렬)
+    for (let i = 0; i < 13; i++) {
+        const bx = uiStartX + (i * slotSpacing);
+        const by = uiStartY + 42; // 하트에서 아래로 42px 아래에 배치
+
+        // 검은색 껍데기 기본 아웃라인 도트 형성
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(bx + 9, by, 9, 3);
+        ctx.fillRect(bx + 5, by + 3, 15, 10);
+        ctx.fillRect(bx + 1, by + 10, 5, 5);
+
+        // 기본 빈 상태 배고픔칸 회색 채우기
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(bx + 7, by + 3, 11, 9);
+
+        const currentPoints = player.hunger * 2;
+        const indexPoints = i * 2;
+
+        if (currentPoints >= indexPoints + 2) {
+            // 구운 고기가 온전하게 한 칸 꽉 차있는 상태
+            ctx.fillStyle = '#cbb387'; // 뼈 부위 아이보리 도트
+            ctx.fillRect(bx + 1, by + 12, 3, 3);
+            
+            ctx.fillStyle = '#9e5627'; // 고기 주황빛 갈색 바디 도트
+            ctx.fillRect(bx + 7, by + 3, 13, 9);
+            ctx.fillRect(bx + 9, by + 1, 7, 2);
+            ctx.fillRect(bx + 5, by + 5, 2, 5);
+
+            // 탄내나는 훈제 디테일 검은갈색선 무늬 추가 고증
+            ctx.fillStyle = '#5a2e12';
+            ctx.fillRect(bx + 11, by + 3, 3, 7);
+        } 
+        else if (currentPoints === indexPoints + 1) {
+            // 3분이 경과하여 정확히 반 칸(0.5)만 채워져야 할 때 우측 절반 조각 드로우
+            ctx.fillStyle = '#9e5627'; 
+            ctx.fillRect(bx + 13, by + 3, 7, 9);
+            ctx.fillRect(bx + 13, by + 1, 3, 2);
+            
+            ctx.fillStyle = '#5a2e12';
+            ctx.fillRect(bx + 13, by + 3, 2, 7);
+        }
+    }
+}
+
+// 메인 루프 동기화 구동 시작
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
