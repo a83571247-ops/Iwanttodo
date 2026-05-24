@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>마리오 2000x1500 완성판 게임</title>
+    <title>피카츄의 마인크래프트 블록 파괴 게임</title>
     <style>
         body {
             margin: 0;
@@ -16,10 +16,11 @@
             overflow: auto; /* 화면이 크므로 스크롤 허용 */
         }
         canvas {
-            background-color: #74b9ff; /* 선명한 하늘색 배경 */
+            background-color: #74b9ff; /* 하늘색 배경 */
             border: 6px solid #fff;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
             image-rendering: pixelated;
+            cursor: crosshair; /* 마우스 커서를 조준선 모양으로 변경 */
         }
     </style>
 </head>
@@ -32,13 +33,12 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // --- 1. 기본 설정 및 지형 크기 정의 ---
-const BLOCK_SIZE = 50; // 블록 한 칸을 50x50 픽셀 크기로 큼직하게 설정
+const BLOCK_SIZE = 50; // 50x50 픽셀 블록
 const COLS = canvas.width / BLOCK_SIZE;  // 가로 40칸
 const ROWS = canvas.height / BLOCK_SIZE; // 세로 30칸
 
 const GRAVITY = 0.5;
 
-// 블록 색상 정의 (흙, 돌, 석탄, 다이아몬드)
 const BLOCK_TYPES = {
     DIRT:    { main: '#866043', detail: '#573d26' },
     STONE:   { main: '#737373', detail: '#525252' },
@@ -47,44 +47,48 @@ const BLOCK_TYPES = {
 };
 const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
 
-// --- 2. 2차원 배열 지형 생성 (아래에서부터 확실하게 5칸 생성) ---
+// --- 2. 2차원 배열 지형 생성 (아래에서부터 5칸 생성) ---
 const map = [];
 for (let r = 0; r < ROWS; r++) {
     map[r] = [];
     for (let c = 0; c < COLS; c++) {
-        // 맨 아래에서부터 5줄(ROWS-5 줄부터 맨 밑 ROWS-1 줄까지)에 무작위 배치
         if (r >= ROWS - 5) {
             const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
-            map[r][c] = BLOCK_TYPES[randomType];
+            map[r][c] = {
+                type: BLOCK_TYPES[randomType],
+                damage: 0 // 블록이 입은 데미지 (0 ~ 30 프레임 동안 누적)
+            };
         } else {
-            map[r][c] = null; // 위쪽 공간은 모두 하늘
+            map[r][c] = null;
         }
     }
 }
 
-// --- 3. 캐릭터(마리오) 설정 ---
-// 아래에서 5칸이 땅이므로, 땅 바로 위(세로 25번째 칸 표면)에 배치하여 갇힘 방지
+// --- 3. 캐릭터(피카츄) 설정 ---
 const player = {
     x: 150,
-    y: (ROWS - 5) * BLOCK_SIZE - 60, // 땅 표면 바로 위
-    width: 36,
-    height: 50,
-    color: '#e60012',
+    y: (ROWS - 5) * BLOCK_SIZE - 60,
+    width: 40,  // 피카츄 크기 조정
+    height: 44,
+    color: '#FFDE00', // 피카츄 노란색
     dx: 0,
     dy: 0,
     speed: 6,
     jumpForce: 13,
-    grounded: false
+    grounded: false,
+    facing: 'right' // 바라보는 방향 ('left' 또는 'right')
 };
 
-// --- 4. 키보드 방향키 입력 제어 ---
-const keys = { ArrowRight: false, ArrowLeft: false, ArrowUp: false };
+// --- 4. WASD 입력 제어 및 마우스 상태 ---
+const keys = { w: false, a: false, s: false, d: false };
+const mouse = { isDown: false, x: 0, y: 0 };
 
 window.addEventListener('keydown', (e) => {
-    if (e.key in keys) {
-        keys[e.key] = true;
-        // 위쪽 방향키를 누르고 바닥에 서 있을 때만 점프 시동
-        if (e.key === 'ArrowUp' && player.grounded) {
+    const key = e.key.toLowerCase();
+    if (key in keys) {
+        keys[key] = true;
+        // W 키를 누르고 바닥에 서 있을 때만 점프
+        if (key === 'w' && player.grounded) {
             player.dy = -player.jumpForce;
             player.grounded = false;
         }
@@ -92,8 +96,30 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
-    if (e.key in keys) keys[e.key] = false;
+    const key = e.key.toLowerCase();
+    if (key in keys) keys[key] = false;
 });
+
+// 마우스 클릭 및 좌표 수집 (캔버스 상대 좌표 계산)
+canvas.addEventListener('mousedown', (e) => {
+    mouse.isDown = true;
+    updateMousePos(e);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    updateMousePos(e);
+});
+
+window.addEventListener('mouseup', () => {
+    mouse.isDown = false;
+});
+
+function updateMousePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    // 스크롤 및 캔버스 크기 변화를 반영한 정확한 픽셀 좌표 계산
+    mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+}
 
 // --- 5. AABB 사각형 충돌 감지 공식 ---
 function checkCollision(p, b) {
@@ -103,61 +129,86 @@ function checkCollision(p, b) {
            p.y + p.height > b.y;
 }
 
-// --- 6. 물리 업데이트 및 완벽한 벽/땅 통과 방지 알고리즘 ---
+// --- 6. 물리 업데이트 및 충돌/파괴 핵심 로직 ---
 function update() {
-    // 이동키 입력 제어
-    if (keys.ArrowRight) player.dx = player.speed;
-    else if (keys.ArrowLeft) player.dx = -player.speed;
-    else player.dx = 0;
+    // WASD 이동키 및 방향 설정
+    if (keys.d) {
+        player.dx = player.speed;
+        player.facing = 'right';
+    } else if (keys.a) {
+        player.dx = -player.speed;
+        player.facing = 'left';
+    } else {
+        player.dx = 0;
+    }
 
-    // 중력 작동
     player.dy += GRAVITY;
 
-    // [X축 처리] 좌우 이동 후 벽과 충돌하는지 체크
+    // [X축 처리] 좌우 벽 충돌
     player.x += player.dx;
-    
-    // 화면 좌우 밖으로 못 나가게 가두기
     if (player.x < 0) player.x = 0;
     if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-    // X축 기준 블록 충돌 시 밀어내기 (벽 통과 차단)
     for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (map[r][c]) {
+            if (map[r] && map[r][c]) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dx > 0) player.x = blockObj.x - player.width;      // 우측 벽 충돌
-                    else if (player.dx < 0) player.x = blockObj.x + blockObj.width; // 좌측 벽 충돌
+                    if (player.dx > 0) player.x = blockObj.x - player.width;
+                    else if (player.dx < 0) player.x = blockObj.x + blockObj.width;
                 }
             }
         }
     }
 
-    // [Y축 처리] 상하 이동(점프/추락) 후 땅과 충돌하는지 체크
+    // [Y축 처리] 바닥 착지 및 천장 충돌
     player.y += player.dy;
     player.grounded = false;
 
-    // 화면 맨 아래로 빠지는 예외 방지선
     if (player.y + player.height > canvas.height) {
         player.y = canvas.height - (5 * BLOCK_SIZE) - player.height;
         player.dy = 0;
         player.grounded = true;
     }
 
-    // Y축 기준 블록 충돌 시 밀어내기 (바닥 착지 및 천장 차단)
     for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (map[r][c]) {
+            if (map[r] && map[r][c]) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dy > 0) { // 아래로 떨어지다 발이 땅에 닿음
+                    if (player.dy > 0) {
                         player.y = blockObj.y - player.height;
                         player.dy = 0;
                         player.grounded = true;
-                    } else if (player.dy < 0) { // 위로 점프하다 머리가 블록에 부딪힘
+                    } else if (player.dy < 0) {
                         player.y = blockObj.y + blockObj.height;
                         player.dy = 0;
                     }
+                }
+            }
+        }
+    }
+
+    // --- [마우스 블록 파괴 로직] ---
+    let targetR = Math.floor(mouse.y / BLOCK_SIZE);
+    let targetC = Math.floor(mouse.x / BLOCK_SIZE);
+
+    // 마우스를 꾹 누르고 있을 때 실행
+    if (mouse.isDown && map[targetR] && map[targetR][targetC]) {
+        map[targetR][targetC].damage += 1; // 누르고 있는 동안 매 프레임 데미지 누적
+
+        // 약 0.5초(30프레임) 동안 꾹 누르면 블록이 부서짐
+        if (map[targetR][targetC].damage >= 30) {
+            map[targetR][targetC] = null; // 블록 파괴 (공기로 변함)
+        }
+    }
+
+    // 마우스를 떼거나 다른 블록으로 옮기면 다른 블록들의 데미지는 서서히 회복됨
+    for (let r = ROWS - 5; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r] && map[r][c]) {
+                if (!mouse.isDown || r !== targetR || c !== targetC) {
+                    if (map[r][c].damage > 0) map[r][c].damage -= 0.5; // 서서히 갈라짐 치유
                 }
             }
         }
@@ -166,14 +217,13 @@ function update() {
 
 // --- 7. 그래픽 렌더링 (화면에 그리기) ---
 function draw() {
-    // 이전 화면 깨끗하게 지우기
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 하단 5칸 무작위 픽셀 지형 그리기
+    // 1. 지형 및 갈라지는 효과 그리기
     for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (map[r][c]) {
-                const block = map[r][c];
+            if (map[r] && map[r][c]) {
+                const block = map[r][c].type;
                 const bx = c * BLOCK_SIZE;
                 const by = r * BLOCK_SIZE;
 
@@ -181,34 +231,78 @@ function draw() {
                 ctx.fillStyle = block.main;
                 ctx.fillRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 블록 내부 픽셀 문양 장식
+                // 내부 픽셀 문양
                 ctx.fillStyle = block.detail;
                 ctx.fillRect(bx + 8, by + 10, 10, 10);
                 ctx.fillRect(bx + 28, by + 26, 12, 10);
 
-                // 블록 외곽 그리드 선선하게 추가
+                // 블록 외곽선
                 ctx.strokeStyle = 'rgba(0,0,0,0.2)';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
+
+                // [마인크래프트식 갈라지는 표현 구현]
+                const dmg = map[r][c].damage;
+                if (dmg > 0) {
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)'; // 검은색 균열선
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    
+                    // 데미지 단계별로 금이 더 많이 가도록 드로잉
+                    if (dmg >= 5) { // 1단계 균열
+                        ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + 25, by + 25);
+                        ctx.moveTo(bx + 40, by + 10); ctx.lineTo(bx + 25, by + 25);
+                    }
+                    if (dmg >= 15) { // 2단계 균열
+                        ctx.moveTo(bx + 25, by + 25); ctx.lineTo(bx + 20, by + 45);
+                        ctx.moveTo(bx + 10, by + 35); ctx.lineTo(bx + 35, by + 40);
+                    }
+                    if (dmg >= 25) { // 3단계 균열 (부서지기 직전 사방으로 번짐)
+                        ctx.moveTo(bx + 5, by + 20); ctx.lineTo(bx + 45, by + 20);
+                        ctx.moveTo(bx + 45, by + 5); ctx.lineTo(bx + 5, by + 45);
+                    }
+                    ctx.stroke();
+                }
             }
         }
     }
 
-    // 캐릭터(마리오 사각형 모양) 그리기
-    ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.width, player.height);
+    // 2. 피카츄 캐릭터 그리기 (정밀한 픽셀 레이어)
+    ctx.save();
     
-    // 캐릭터 파란색 멜빵바지 표현
-    ctx.fillStyle = '#0020b8';
-    ctx.fillRect(player.x + 4, player.y + 20, player.width - 8, player.height - 20);
-
-    // 눈동자 픽셀 장식 (좌우 방향 주시)
-    ctx.fillStyle = '#000';
-    if (keys.ArrowLeft) {
-        ctx.fillRect(player.x + 6, player.y + 8, 6, 6);
+    // 왼쪽을 볼 때는 캐릭터 그래픽을 반전시킴
+    if (player.facing === 'left') {
+        ctx.translate(player.x + player.width, player.y);
+        ctx.scale(-1, 1);
     } else {
-        ctx.fillRect(player.x + player.width - 12, player.y + 8, 6, 6);
+        ctx.translate(player.x, player.y);
     }
+
+    // 몸통 (노란색)
+    ctx.fillStyle = player.color;
+    ctx.fillRect(0, 12, player.width, player.height - 12);
+
+    // 귀 (왼쪽 귀, 오른쪽 귀 쫑긋 표현)
+    ctx.fillRect(4, 0, 8, 12);
+    ctx.fillRect(player.width - 12, 2, 8, 10);
+    // 귀 끝 검은색 포인트
+    ctx.fillStyle = '#000';
+    ctx.fillRect(4, 0, 8, 4);
+    ctx.fillRect(player.width - 12, 2, 8, 4);
+
+    // 눈 (검은색 동그라미)
+    ctx.fillRect(player.width - 14, 18, 5, 5);
+
+    // 볼터치 (피카츄 시그니처 빨간 볼)
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(player.width - 10, 26, 6, 6);
+
+    // 등 줄무늬 (갈색 선 두 줄)
+    ctx.fillStyle = '#573d26';
+    ctx.fillRect(4, 22, 6, 4);
+    ctx.fillRect(4, 30, 6, 4);
+
+    ctx.restore();
 }
 
 // --- 8. 실시간 메인 루프 실행 ---
