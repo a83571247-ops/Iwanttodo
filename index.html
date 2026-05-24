@@ -3,103 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>마인크래프트 지형의 마리오 게임</title>
+    <title>마리오 거대 그리드 게임 (500x300)</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            background-color: #222;
+            background-color: #111;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow: auto; /* 화면이 매우 크므로 스크롤이 가능하도록 설정 */
         }
         canvas {
-            background-color: #74b9ff; /* 마리오 하늘색 배경 */
-            border: 4px solid #fff;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            image-rendering: pixelated; /* 픽셀 아트 스타일 강조 */
+            background-color: #74b9ff; /* 하늘색 배경 */
+            border: 6px solid #fff;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            image-rendering: pixelated; /* 픽셀 매끄럽게 처리 */
         }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas" width="800" height="480"></canvas>
+<canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// 게임 설정
-const GRAVITY = 0.6;
-const BLOCK_SIZE = 32; // 각 블록의 크기 (32x32 픽셀)
-const COLS = canvas.width / BLOCK_SIZE; // 25칸
-const ROWS = canvas.height / BLOCK_SIZE; // 15칸
+// --- 1. 거대 그리드 및 화면 크기 설정 ---
+const BLOCK_SIZE = 4;   // 블록 한 칸의 크기 (4x4 픽셀)
+const COLS = 500;       // 가로 500칸
+const ROWS = 300;       // 세로 300칸
 
-// 블록 종류별 색상 정의 (마인크래프트 스타일 픽셀)
+canvas.width = COLS * BLOCK_SIZE;  // 2000 픽셀
+canvas.height = ROWS * BLOCK_SIZE; // 1200 픽셀
+
+const GRAVITY = 0.2; // 그리드 크기에 맞춘 중력 최적화
+
+// --- 2. 블록 종류 및 색상 설정 ---
 const BLOCK_TYPES = {
-    DIRT: { main: '#866043', detail: '#573d26' },
-    STONE: { main: '#737373', detail: '#525252' },
-    COAL: { main: '#737373', detail: '#1c1c1c' },
-    DIAMOND: { main: '#737373', detail: '#4dedf4' }
+    DIRT:    '#866043', // 흙
+    STONE:   '#737373', // 돌
+    COAL:    '#2c2c2c', // 석탄
+    DIAMOND: '#4dedf4'  // 다이아몬드
 };
+const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
 
-// 지형 맵 배열 생성 (2차원 배열)
+// --- 3. 2차원 배열 지형 생성 (맨 아래에서부터 5칸 땅 설정) ---
 const map = [];
-
-// 요청하신 규칙대로 5개 층 지형 생성
 for (let r = 0; r < ROWS; r++) {
     map[r] = [];
     for (let c = 0; c < COLS; c++) {
-        // 밑에서부터 5개 층 계산 (ROWS-5 부터 ROWS-1 까지)
-        let groundLevel = ROWS - r; 
-
-        if (groundLevel === 5 || groundLevel === 4) {
-            // 밑에서 5번째, 4번째 줄: 흙
-            map[r][c] = 'DIRT';
-        } else if (groundLevel === 3) {
-            // 밑에서 3번째 줄: 돌
-            map[r][c] = 'STONE';
-        } else if (groundLevel === 2) {
-            // 밑에서 2번째 줄: 돌 + 석탄 무작위 (석탄 확률 30%)
-            map[r][c] = Math.random() < 0.3 ? 'COAL' : 'STONE';
-        } else if (groundLevel === 1) {
-            // 맨 밑줄: 돌 + 석탄 + 다이아몬드 무작위 (다이아 10%, 석탄 20%)
-            let rand = Math.random();
-            if (rand < 0.1) map[r][c] = 'DIAMOND';
-            else if (rand < 0.3) map[r][c] = 'COAL';
-            else map[r][c] = 'STONE';
+        // 맨 밑에서부터 5칸 (ROWS - 5 이상)에 무작위 지형 배치
+        if (r >= ROWS - 5) {
+            const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
+            map[r][c] = BLOCK_TYPES[randomType];
         } else {
-            // 그 위는 공기(하늘)
-            map[r][c] = null;
+            map[r][c] = null; // 위쪽 295칸은 전부 하늘
         }
     }
 }
 
-// 마리오 캐릭터 설정 (지형 위에 사뿐히 내려앉도록 초기 Y축 조절)
-const mario = {
-    x: 50,
-    y: canvas.height - (BLOCK_SIZE * 5) - 40,
-    width: 24,
-    height: 36,
+// --- 4. 캐릭터(마リオ) 설정 ---
+// 아래에서 5칸이 땅이므로, 땅 바로 위(세로 295번째 칸)에서 시작
+// 거대해진 화면 시스템에 맞춰 캐릭터 크기도 그리드 단위로 최적화
+const player = {
+    x: 200,
+    y: (ROWS - 15) * BLOCK_SIZE, 
+    width: 16,  // 가로 4칸 크기
+    height: 24, // 세로 6칸 크기
     color: '#e60012',
     dx: 0,
     dy: 0,
     speed: 4,
-    jumpForce: 11,
+    jumpForce: 6,
     grounded: false
 };
 
-// 키보드 입력 상태
+// --- 5. 키보드 입력 설정 ---
 const keys = { ArrowRight: false, ArrowLeft: false, ArrowUp: false };
 
 window.addEventListener('keydown', (e) => {
     if (e.key in keys) {
         keys[e.key] = true;
-        if (e.key === 'ArrowUp' && mario.grounded) {
-            mario.dy = -mario.jumpForce;
-            mario.grounded = false;
+        // 땅에 확실히 서 있을 때만 위쪽 방향키로 점프
+        if (e.key === 'ArrowUp' && player.grounded) {
+            player.dy = -player.jumpForce;
+            player.grounded = false;
         }
     }
 });
@@ -108,87 +99,99 @@ window.addEventListener('keyup', (e) => {
     if (e.key in keys) keys[e.key] = false;
 });
 
-// 블록 그리기 함수 (픽셀 텍스처 느낌 내기)
-function drawBlock(type, x, y) {
-    const colors = BLOCK_TYPES[type];
-    ctx.fillStyle = colors.main;
-    ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
-
-    // 픽셀 스타일 디테일 점 찍기
-    ctx.fillStyle = colors.detail;
-    if (type === 'DIRT') {
-        ctx.fillRect(x+4, y+4, 4, 4);
-        ctx.fillRect(x+16, y+12, 6, 4);
-        ctx.fillRect(x+8, y+24, 4, 4);
-    } else if (type === 'STONE') {
-        ctx.fillRect(x+2, y+6, 6, 4);
-        ctx.fillRect(x+18, y+16, 8, 4);
-    } else if (type === 'COAL' || type === 'DIAMOND') {
-        // 광석 테두리(돌) 안에 박힌 보석 표현
-        ctx.fillRect(x+2, y+6, 6, 4); 
-        ctx.fillStyle = colors.detail; // 검은색(석탄) 또는 하늘색(다이아) 광석 칩
-        ctx.fillRect(x+8, y+8, 6, 6);
-        ctx.fillRect(x+18, y+18, 6, 6);
-        ctx.fillRect(x+6, y+22, 4, 4);
-    }
-    
-    // 블록 테두리 선 (그리드 느낌)
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
+// --- 6. 충돌 판정 함수 (AABB 방식) ---
+function checkCollision(p, b) {
+    return p.x < b.x + b.width &&
+           p.x + p.width > b.x &&
+           p.y < b.y + b.height &&
+           p.y + p.height > b.y;
 }
 
+// --- 7. 물리 업데이트 및 완벽한 벽 통과 방지 로직 ---
 function update() {
-    // 이동
-    if (keys.ArrowRight) mario.dx = mario.speed;
-    else if (keys.ArrowLeft) mario.dx = -mario.speed;
-    else mario.dx = 0;
+    // 좌우 이동 제어
+    if (keys.ArrowRight) player.dx = player.speed;
+    else if (keys.ArrowLeft) player.dx = -player.speed;
+    else player.dx = 0;
 
-    mario.dy += GRAVITY;
-    mario.x += mario.dx;
-    mario.y += mario.dy;
+    // 중력 가속도 추가
+    player.dy += GRAVITY;
 
-    // 화면 좌우 이탈 방지
-    if (mario.x < 0) mario.x = 0;
-    if (mario.x + mario.width > canvas.width) mario.x = canvas.width - mario.width;
-
-    // 블록 충돌 구현 (바닥 체크)
-    mario.grounded = false;
+    // 1. X축 이동 계산 및 블록 충돌 검사 (좌우 벽 통과 방지)
+    player.x += player.dx;
     
-    // 마리오가 밟고 서있을 수 있는 Y축 기준점 (땅의 표면)
-    const groundY = canvas.height - (BLOCK_SIZE * 5);
+    // 화면 좌우 경계 이탈 방지
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-    if (mario.y + mario.height >= groundY) {
-        mario.y = groundY - mario.height;
-        mario.dy = 0;
-        mario.grounded = true;
-    }
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 1. 마인크래프트식 맵 그리기
-    for (let r = 0; r < ROWS; r++) {
+    // 주변 블록 탐색 및 충돌 시 밀어내기
+    for (let r = ROWS - 6; r < ROWS; r++) { // 효율적인 연산을 위해 땅 근처 레이어만 루프 검사
         for (let c = 0; c < COLS; c++) {
-            if (map[r][c]) {
-                drawBlock(map[r][c], c * BLOCK_SIZE, r * BLOCK_SIZE);
+            if (map[r] && map[r][c]) {
+                const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
+                if (checkCollision(player, blockObj)) {
+                    if (player.dx > 0) player.x = blockObj.x - player.width;      // 오른쪽 벽 충돌
+                    else if (player.dx < 0) player.x = blockObj.x + blockObj.width; // 왼쪽 벽 충돌
+                }
             }
         }
     }
 
-    // 2. 마리오 캐릭터 그리기
-    ctx.fillStyle = mario.color;
-    ctx.fillRect(mario.x, mario.y, mario.width, mario.height);
-    // 멜빵바지
-    ctx.fillStyle = '#0020b8';
-    ctx.fillRect(mario.x + 4, mario.y + 18, mario.width - 8, mario.height - 18);
-    // 얼굴과 모자
-    ctx.fillStyle = '#fcbcb0';
-    ctx.fillRect(mario.x + 4, mario.y + 4, mario.width - 8, 14);
-    ctx.fillStyle = mario.color;
-    ctx.fillRect(mario.x + 2, mario.y, mario.width - 4, 6);
+    // 2. Y축 이동 계산 및 블록 충돌 검사 (바닥 착지 및 천장)
+    player.y += player.dy;
+    player.grounded = false;
+
+    // 화면 맨 아래로 완전히 꺼지는 현상 방지 리셋선
+    if (player.y + player.height > canvas.height) {
+        player.y = canvas.height - (5 * BLOCK_SIZE) - player.height;
+        player.dy = 0;
+        player.grounded = true;
+    }
+
+    for (let r = ROWS - 6; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r] && map[r][c]) {
+                const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
+                if (checkCollision(player, blockObj)) {
+                    if (player.dy > 0) { // 아래로 추락하다가 땅에 닿음
+                        player.y = blockObj.y - player.height;
+                        player.dy = 0;
+                        player.grounded = true;
+                    } else if (player.dy < 0) { // 위로 점프하다 머리가 지형에 부딪힘
+                        player.y = blockObj.y + blockObj.height;
+                        player.dy = 0;
+                    }
+                }
+            }
+        }
+    }
 }
 
+// --- 8. 거대 그래픽 렌더링 ---
+function draw() {
+    // 화면 전체 청소 (하늘색 배경 유지)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 500x300 격자 기반 무작위 땅 블록 그리기
+    for (let r = ROWS - 5; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r][c]) {
+                ctx.fillStyle = map[r][c];
+                ctx.fillRect(c * BLOCK_SIZE, r * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+            }
+        }
+    }
+
+    // 캐릭터(마리오 사각형) 그리기
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    // 캐릭터 디자인 디테일 (파란 멜빵바지 영역 레이어)
+    ctx.fillStyle = '#0020b8';
+    ctx.fillRect(player.x + 2, player.y + 10, player.width - 4, player.height - 10);
+}
+
+// --- 9. 엔진 기동 ---
 function gameLoop() {
     update();
     draw();
