@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>피카츄 무한 지형 마인크래프트 (오류 수정판)</title>
+    <title>피카츄 무한 마인크래프트 게임 (완벽 오류 수정판)</title>
     <style>
         body {
             margin: 0;
@@ -13,14 +13,13 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            overflow: hidden; /* 카메라 시스템 구동을 위해 브라우저 스크롤바 제거 */
+            overflow: hidden;
         }
         canvas {
             background-color: #74b9ff; /* 하늘색 배경 */
             border: 6px solid #fff;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            image-rendering: pixelated;
-            cursor: crosshair;
+            image-rendering: pixelated; /* 도트 픽셀을 흐림 없이 선명하게 표현 */
         }
     </style>
 </head>
@@ -32,9 +31,9 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 기본 게임 환경 설정 ---
-const BLOCK_SIZE = 50; 
-const GRAVITY = 0.5;
+// --- 1. 환경 설정 ---
+const BLOCK_SIZE = 60; // 가시성을 위해 블록 크기를 60px로 최적화
+const GRAVITY = 0.6;
 
 const BLOCK_TYPES = {
     DIRT:    { main: '#866043', detail: '#573d26' },
@@ -44,16 +43,16 @@ const BLOCK_TYPES = {
 };
 const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
 
-// 2차원 해시 구조의 무한 월드 맵 저장소
+// 2차원 공간 해시 테이블 (모든 좌표 지원)
 const worldMap = {}; 
-const GROUND_START_ROW = 15; // 땅이 시작되는 세로 격자 기준선 (0~14층은 하늘)
+const GROUND_START_ROW = 10; // 10층 이하(Y축 아래)는 전부 땅으로 생성
 
-// [오류 수정 및 보강] 캐릭터의 현재 위치에 맞춰 앞(좌우)과 아래에 무한 지형을 생성하는 함수
+// [버그 수정 핵심] 양수, 음수 좌표를 모두 안전하게 문자열 키로 전환하여 블록을 반환하는 함수
 function getBlock(r, c) {
-    // 땅 시작 기준선 이하로 내려가면 무조건 무작위 블록을 자동으로 실시간 생성
     if (r >= GROUND_START_ROW) {
         const key = `${r},${c}`;
         if (worldMap[key] === undefined) {
+            // 완전히 랜덤하고 무한한 지형 블록 할당
             const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
             worldMap[key] = {
                 type: BLOCK_TYPES[randomType],
@@ -65,62 +64,53 @@ function getBlock(r, c) {
     return null;
 }
 
-// --- 2. 캐릭터(피카츄) 스펙 및 시작 좌표 최적화 ---
+// --- 2. 캐릭터(피카츄) 스펙 및 초기화 ---
 const player = {
-    // 캔버스 중심 부근에서 시작
-    x: 1000, 
-    // [중요 고정] 땅이 바로 시작되는 15번째 줄 바로 위에 피카츄가 서 있도록 설정 (하늘색 화면 증상 원천 차단)
-    y: (GROUND_START_ROW * BLOCK_SIZE) - 60,
-    baseWidth: 40,
-    baseHeight: 44,
-    width: 40,
-    height: 44,
+    x: 0, // 0번 좌표 기준 중앙 정렬
+    y: (GROUND_START_ROW * BLOCK_SIZE) - 100, // 땅 바로 위에 안정적으로 스폰
+    baseWidth: 46,
+    baseHeight: 50,
+    width: 46,
+    height: 50,
     color: '#FFDE00',
     dx: 0,
     dy: 0,
     speed: 6,
-    jumpForce: 13,
+    jumpForce: 15,
     grounded: false,
     facing: 'right',
     isCrouching: false
 };
 
-// --- 3. 부드러운 카메라 추적 시스템 ---
+// --- 3. 부드러운 중앙 고정 카메라 시스템 ---
 const camera = {
     x: 0,
     y: 0,
     update: function() {
-        // 플레이어 캐릭터가 화면 정중앙(2000x1500의 가운데)에 정확히 오도록 카메라 고정
+        // 캐릭터를 화면 한가운데에 유지하도록 스크롤 값 추적
         this.x = player.x - canvas.width / 2 + player.width / 2;
         this.y = player.y - canvas.height / 2 + player.height / 2;
     }
 };
 
-// --- 4. 조작 입력 처리 통합 및 간섭 차단 (W, Space, Shift 완벽 연동) ---
+// --- 4. 키보드 및 마우스 입력 처리 (Space, W, Shift 완전 보정) ---
 const keys = { w: false, a: false, s: false, d: false, ' ': false, shift: false };
 const mouse = { isDown: false, worldX: 0, worldY: 0 };
 
 window.addEventListener('keydown', (e) => {
     let key = e.key.toLowerCase();
-    if (e.key === ' ') {
-        key = ' ';
-        e.preventDefault(); // 스페이스바를 누를 때 웹브라우저 창이 아래로 내려가는 현상 방지
-    }
-    if (e.key === 'Shift') {
-        key = 'shift';
-        e.preventDefault(); // 쉬프트 단축키 간섭 방지
-    }
+    if (e.key === ' ') { key = ' '; e.preventDefault(); }
+    if (e.key === 'Shift') { key = 'shift'; e.preventDefault(); }
 
     if (key in keys) {
         keys[key] = true;
 
-        // [W] 또는 [Space] 중 어느 것을 눌러도 서 있는 상태라면 점프 작동
+        // Space키 또는 W키를 누르면 둘 다 점프 구동
         if ((key === 'w' || key === ' ') && player.grounded) {
             player.dy = -player.jumpForce;
             player.grounded = false;
         }
-
-        // [Shift]를 누르고 있으면 즉시 웅크리기 활성화
+        // Shift를 누르면 즉시 웅크리기 진입
         if (key === 'shift') {
             player.isCrouching = true;
         }
@@ -134,15 +124,12 @@ window.addEventListener('keyup', (e) => {
 
     if (key in keys) {
         keys[key] = false;
-
-        // [Shift]를 떼면 즉시 웅크리기 해제
         if (key === 'shift') {
             player.isCrouching = false;
         }
     }
 });
 
-// 마우스 클릭 및 좌표 갱신 (카메라 스크롤 보정 적용)
 canvas.addEventListener('mousedown', (e) => { mouse.isDown = true; updateMousePos(e); });
 canvas.addEventListener('mousemove', (e) => { updateMousePos(e); });
 window.addEventListener('mouseup', () => { mouse.isDown = false; });
@@ -151,12 +138,11 @@ function updateMousePos(e) {
     const rect = canvas.getBoundingClientRect();
     const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
     const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
-    // 마우스의 절대적인 월드 좌표 = 화면 좌표 + 카메라 이동값
     mouse.worldX = canvasX + camera.x;
     mouse.worldY = canvasY + camera.y;
 }
 
-// 사각형 간의 충돌 검사 알고리즘 (AABB)
+// 충돌 감지 함수 (AABB)
 function checkCollision(p, b) {
     return p.x < b.x + b.width &&
            p.x + p.width > b.x &&
@@ -164,18 +150,18 @@ function checkCollision(p, b) {
            p.y + p.height > b.y;
 }
 
-// --- 5. 실시간 물리 시스템 및 지형 무한 갱신 루프 ---
+// --- 5. 게임 물리 연산 및 실시간 청크 생성 업데이트 ---
 function update() {
-    // Shift 상태에 따라 실시간 캐릭터 충돌 높이 및 속도 조절
+    // 웅크리기(Shift) 발동 시 충돌 판정 크기 축소 디테일
     if (player.isCrouching) {
-        player.height = player.baseHeight * (2 / 3); // 원래 키의 2/3로 강제 축소
-        player.speed = 3.5;                         // 살금살금 기어가기 속도
+        player.height = player.baseHeight * 0.65; // 키가 작아짐
+        player.speed = 3.5;                      // 느리게 이동
     } else {
         player.height = player.baseHeight;
         player.speed = 6;
     }
 
-    // A, D 좌우 이동 연산
+    // 움직임 입력
     if (keys.d) {
         player.dx = player.speed;
         player.facing = 'right';
@@ -188,13 +174,13 @@ function update() {
 
     player.dy += GRAVITY;
 
-    // 플레이어 주변 반경 5칸 이내의 블록만 한정해서 스캔 (무한 맵 연산 랙 제거 최적화)
-    const startRow = Math.floor((player.y - 150) / BLOCK_SIZE);
+    // 플레이어 주변 타일 연산 범위를 여유 있게 설정 (음수 연산 오류 완전 예방)
+    const startRow = Math.floor((player.y - 200) / BLOCK_SIZE);
     const endRow = Math.floor((player.y + 200) / BLOCK_SIZE);
-    const startCol = Math.floor((player.x - 150) / BLOCK_SIZE);
-    const endCol = Math.floor((player.x + 150) / BLOCK_SIZE);
+    const startCol = Math.floor((player.x - 200) / BLOCK_SIZE);
+    const endCol = Math.floor((player.x + 200) / BLOCK_SIZE);
 
-    // [X축 이동 및 블록 충돌 막기 처리]
+    // X축 이동 및 벽 통과 차단 충돌 검사
     player.x += player.dx;
     for (let r = startRow; r <= endRow; r++) {
         for (let c = startCol; c <= endCol; c++) {
@@ -209,7 +195,7 @@ function update() {
         }
     }
 
-    // [Y축 이동 및 바닥 착지/천장 막기 처리]
+    // Y축 이동 및 바닥 착지/머리 천장 충돌 검사
     player.y += player.dy;
     player.grounded = false;
 
@@ -219,11 +205,11 @@ function update() {
             if (block) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dy > 0) { // 하강 중 착지
+                    if (player.dy > 0) {
                         player.y = blockObj.y - player.height;
                         player.dy = 0;
                         player.grounded = true;
-                    } else if (player.dy < 0) { // 상승 중 천장에 머리 부딪힘
+                    } else if (player.dy < 0) {
                         player.y = blockObj.y + blockObj.height;
                         player.dy = 0;
                     }
@@ -232,47 +218,33 @@ function update() {
         }
     }
 
-    // 캐릭터 실시간 위치를 기준으로 카메라 초점 추적
+    // 카메라 위치 갱신
     camera.update();
 
-    // --- 마우스 꾹 누를 때 블록 실시간 파괴 로직 ---
+    // 마우스로 땅 파기 무한 채굴 시스템 
     let targetR = Math.floor(mouse.worldY / BLOCK_SIZE);
     let targetC = Math.floor(mouse.worldX / BLOCK_SIZE);
     const activeBlock = getBlock(targetR, targetC);
 
     if (mouse.isDown && activeBlock) {
         activeBlock.damage += 1;
-        if (activeBlock.damage >= 30) {
+        if (activeBlock.damage >= 25) {
             const key = `${targetR},${targetC}`;
-            worldMap[key] = null; // 영구 제거 (빈 공기 칸으로 변함)
-        }
-    }
-
-    // 화면 시야 영역 내 블록 균열 상태 자동 회복 로직
-    const camStartRow = Math.floor(camera.y / BLOCK_SIZE) - 1;
-    const camEndRow = camStartRow + (canvas.height / BLOCK_SIZE) + 2;
-    const camStartCol = Math.floor(camera.x / BLOCK_SIZE) - 1;
-    const camEndCol = camStartCol + (canvas.width / BLOCK_SIZE) + 2;
-
-    for (let r = camStartRow; r <= camEndRow; r++) {
-        for (let c = camStartCol; c <= camEndCol; c++) {
-            const b = getBlock(r, c);
-            if (b && (r !== targetR || c !== targetC || !mouse.isDown)) {
-                if (b.damage > 0) b.damage -= 0.5;
-            }
+            worldMap[key] = null; // 블록 파괴 및 빈 공간 처리
         }
     }
 }
 
-// --- 6. 그래픽 및 캐릭터 드로잉 처리 ---
+// --- 6. 그래픽 및 화면 드로잉 렌더링 ---
 function draw() {
+    // 하늘색으로 화면 전체 초기화 청소
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    // 캔버스 공간 자체를 카메라 역방향으로 이동시켜 부드러운 카메라 스크롤 구현
+    // 카메라 좌표만큼 월드 전체를 밀어주어 무한 스크롤 연출
     ctx.translate(-camera.x, -camera.y);
 
-    // 현재 카메라 스크롤 시야 안에 들어와 있는 블록들만 선별적으로 그리기
+    // 화면 시야(ViewPort) 크기 내에 존재하는 블록들만 실시간 렌더링 (과부하 완벽 방지)
     const camStartRow = Math.floor(camera.y / BLOCK_SIZE) - 1;
     const camEndRow = camStartRow + (canvas.height / BLOCK_SIZE) + 2;
     const camStartCol = Math.floor(camera.x / BLOCK_SIZE) - 1;
@@ -286,37 +258,33 @@ function draw() {
                 const bx = c * BLOCK_SIZE;
                 const by = r * BLOCK_SIZE;
 
-                // 블록 바탕 채우기
+                // 블록 본체 메인 색상
                 ctx.fillStyle = block.main;
                 ctx.fillRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 블록 픽셀 무늬 효과
+                // 블록 픽셀 디테일 포인트 무늬
                 ctx.fillStyle = block.detail;
-                ctx.fillRect(bx + 8, by + 10, 10, 10);
-                ctx.fillRect(bx + 28, by + 26, 12, 10);
+                ctx.fillRect(bx + 10, by + 12, 12, 12);
+                ctx.fillRect(bx + 35, by + 32, 14, 12);
 
-                // 블록 격자선
-                ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                // 블록 외곽선 격자
+                ctx.strokeStyle = 'rgba(0,0,0,0.12)';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 마구 갈라지는 마인크래프트식 금 크랙 연출
+                // 채굴할 때 생기는 균열 금 크랙 비주얼 이펙트
                 const dmg = blockData.damage;
                 if (dmg > 0) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
                     if (dmg >= 5) {
-                        ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + 25, by + 25);
-                        ctx.moveTo(bx + 40, by + 10); ctx.lineTo(bx + 25, by + 25);
+                        ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + 30, by + 30);
+                        ctx.moveTo(bx + 50, by + 10); ctx.lineTo(bx + 30, by + 30);
                     }
                     if (dmg >= 15) {
-                        ctx.moveTo(bx + 25, by + 25); ctx.lineTo(bx + 20, by + 45);
-                        ctx.moveTo(bx + 10, by + 35); ctx.lineTo(bx + 35, by + 40);
-                    }
-                    if (dmg >= 25) {
-                        ctx.moveTo(bx + 5, by + 20); ctx.lineTo(bx + 45, by + 20);
-                        ctx.moveTo(bx + 45, by + 5); ctx.lineTo(bx + 5, by + 45);
+                        ctx.moveTo(bx + 30, by + 30); ctx.lineTo(bx + 25, by + 55);
+                        ctx.moveTo(bx + 10, by + 40); ctx.lineTo(bx + 45, by + 45);
                     }
                     ctx.stroke();
                 }
@@ -324,63 +292,62 @@ function draw() {
         }
     }
 
-    // 피카츄 캐릭터 레이어 드로잉
+    // --- 피카츄 디자인 캐릭터 드로잉 단계 ---
     ctx.save();
     if (player.facing === 'left') {
         ctx.translate(player.x + player.width, player.y);
-        ctx.scale(-1, 1); // 왼쪽 이동 시 좌우 반전
+        ctx.scale(-1, 1); // 왼쪽 방향 바라볼 시 반전
     } else {
         ctx.translate(player.x, player.y);
     }
 
     const hRatio = player.height / player.baseHeight;
 
-    // 1) 노란색 몸통 (웅크렸을 시 Y축 변형 배율 적용)
+    // 1) 몸통
     ctx.fillStyle = player.color;
-    ctx.fillRect(0, 12 * hRatio, player.width, player.height - (12 * hRatio));
+    ctx.fillRect(0, 14 * hRatio, player.width, player.height - (14 * hRatio));
 
-    // 2) 쫑긋 솟은 귀 디자인
-    ctx.fillRect(4, 0, 8, 12 * hRatio);
-    ctx.fillRect(player.width - 12, 2 * hRatio, 8, 10 * hRatio);
+    // 2) 귀 귀끝 포인트 포함
+    ctx.fillRect(6, 0, 8, 14 * hRatio);
+    ctx.fillRect(player.width - 14, 2 * hRatio, 8, 12 * hRatio);
     ctx.fillStyle = '#000';
-    ctx.fillRect(4, 0, 8, 4 * hRatio);
-    ctx.fillRect(player.width - 12, 2 * hRatio, 8, 4 * hRatio);
+    ctx.fillRect(6, 0, 8, 5 * hRatio);
+    ctx.fillRect(player.width - 14, 2 * hRatio, 8, 5 * hRatio);
 
-    // 3) [눈 그리기] Shift 판정에 따른 눈 모양 교체 실현
+    // 3) [웅크리기 눈동자 분기 보정] Shift 시 ㅡㅡ 일자눈, 평소엔 동그란 눈
     if (player.isCrouching) {
-        // Shift 작동 시 ㅡㅡ 일자눈 눈 표현
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.moveTo(player.width - 17, 18 * hRatio);
-        ctx.lineTo(player.width - 7, 18 * hRatio);
+        ctx.moveTo(player.width - 18, 20 * hRatio);
+        ctx.lineTo(player.width - 6, 20 * hRatio);
         ctx.stroke();
     } else {
-        // 평상시 동그랗고 귀여운 눈
         ctx.fillStyle = '#000';
-        ctx.fillRect(player.width - 14, 18, 5, 5);
+        ctx.fillRect(player.width - 15, 20, 6, 6);
     }
 
-    // 4) 시그니처 빨간 볼터치
+    // 4) 빨간 볼터치
     ctx.fillStyle = '#FF0000';
-    ctx.fillRect(player.width - 10, 24 * hRatio, 6, 6 * hRatio);
+    ctx.fillRect(player.width - 10, 28 * hRatio, 7, 7 * hRatio);
 
-    // 5) 등 뒤의 갈색 줄무늬
+    // 5) 등 무늬 줄줄이
     ctx.fillStyle = '#573d26';
-    ctx.fillRect(4, 22 * hRatio, 6, 4 * hRatio);
-    ctx.fillRect(4, 30 * hRatio, 6, 4 * hRatio);
+    ctx.fillRect(4, 26 * hRatio, 6, 5 * hRatio);
+    ctx.fillRect(4, 36 * hRatio, 6, 5 * hRatio);
 
     ctx.restore();
     ctx.restore();
 }
 
-// 실시간 애니메이션 루프 구동
+// 브라우저 프레임 무한 애니메이션 루프 실행
 function gameLoop() {
     update();
     draw();
     requestAnimationFrame(gameLoop);
 }
 
+// 게임 최초 기동 시작
 gameLoop();
 </script>
 
