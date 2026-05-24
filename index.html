@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>피카츄 서바이벌 마인크래프트 - 완벽 수정판</title>
+    <title>피카츄 마인크래프트 - 서바이벌 수정판</title>
     <style>
         body {
             margin: 0;
@@ -34,10 +34,11 @@ const ctx = canvas.getContext('2d');
 // --- 1. 환경 설정 ---
 const BLOCK_SIZE = 60; 
 const GRAVITY = 0.6;
+const GROUND_START_ROW = 12; // 지표면 시작 줄 (안정적인 화면 스폰을 위해 조정)
 
 // 블록 타입 정의
 const BLOCK_TYPES = {
-    GRASS:   { main: '#2ecc71', detail: '#27ae60' }, // 맨 위 전용 순수 초록색 잔디블록
+    GRASS:   { main: '#2ecc71', detail: '#27ae60' }, // 맨 위 전용 온전한 초록색 잔디블록
     DIRT:    { main: '#866043', detail: '#573d26' }, // 일반 흙
     STONE:   { main: '#737373', detail: '#525252' }, // 돌
     COAL:    { main: '#3c3c3c', detail: '#111111' }, // 석탄
@@ -46,51 +47,20 @@ const BLOCK_TYPES = {
 const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
 
 const worldMap = {}; 
-const GROUND_START_ROW = 10; // 지표면 시작 층 (Y축)
 
-// 지표면 위 자연 식물(잔디/꽃) 저장소
-const decorationMap = {};
-function getDecoration(r, c) {
-    if (r === GROUND_START_ROW - 1) { 
-        const key = `${r},${c}`;
-        if (decorationMap[key] === undefined) {
-            const rand = Math.random();
-            if (rand < 0.15)      decorationMap[key] = 'LONG_GRASS';
-            else if (rand < 0.20) decorationMap[key] = 'RED_FLOWER';
-            else if (rand < 0.25) decorationMap[key] = 'YEL_FLOWER';
-            else                  decorationMap[key] = null;
-        }
-        return decorationMap[key];
-    }
-    return null;
-}
-
-// 구름 데이터 저장소
-const clouds = {};
-function getCloud(r, c) {
-    if (r < GROUND_START_ROW - 1) {
-        const key = `${r},${c}`;
-        if (clouds[key] === undefined) {
-            clouds[key] = Math.random() < 0.08; 
-        }
-        return clouds[key];
-    }
-    return false;
-}
-
-// 무한 월드 지형 스폰 알고리즘
+// 무한 월드 지형 생성 알고리즘
 function getBlock(r, c) {
     if (r >= GROUND_START_ROW) {
         const key = `${r},${c}`;
         if (worldMap[key] === undefined) {
             if (r === GROUND_START_ROW) {
-                // 맨 위 블록은 무조건 초록색깔 잔디 블록(흙)으로만 구성
+                // 맨 위 블록은 무조건 초록색깔 잔디 블록으로만 구성 (흙 배제)
                 worldMap[key] = { type: BLOCK_TYPES.GRASS, damage: 0 };
             } else if (r === GROUND_START_ROW + 1) {
-                // 위에서 2번째 칸까지는 흙(DIRT)으로만 구성
+                // 바로 아래 레이어는 흙
                 worldMap[key] = { type: BLOCK_TYPES.DIRT, damage: 0 };
             } else {
-                // 3번째 줄 이하 깊이는 무작위 분포 구성
+                // 그 외 깊은 곳은 광물 및 돌 섞어서 무작위 생성
                 const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
                 worldMap[key] = { type: BLOCK_TYPES[randomType], damage: 0 };
             }
@@ -102,33 +72,33 @@ function getBlock(r, c) {
 
 // --- 2. 캐릭터 설정 (정면 피카츄 및 서바이벌 스탯) ---
 const player = {
-    x: 0, 
-    y: (GROUND_START_ROW * BLOCK_SIZE) - 100, 
-    baseWidth: 48,
-    baseHeight: 52,
-    width: 48,
-    height: 52,
+    x: 1000, // 캔버스 중앙 근처에서 안정적으로 시작
+    y: (GROUND_START_ROW * BLOCK_SIZE) - 120, 
+    baseWidth: 50,
+    baseHeight: 55,
+    width: 50,
+    height: 55,
     color: '#FFDE00',
     dx: 0,
     dy: 0,
-    speed: 5.5,
-    jumpForce: 10.5, // 1칸(60px)만 점프 가능하도록 제어 고정
+    speed: 6,
+    jumpForce: 12,
     grounded: false,
     isCrouching: false,
     
-    // 서바이벌 시스템 변수 (요청 수치 고정)
-    health: 13,        // 최대 목숨 13칸
-    hunger: 13,        // 최대 배고픔 13칸 (0.5 단위 제어 가능)
-    highestY: 0        // 낙하 데미지 계산을 위한 최고 점프 지점 추적 변수
+    // 고정 요구 서바이벌 스탯 (각각 13칸)
+    health: 13,        
+    hunger: 13,        
+    highestY: 0        // 낙하 높이 계산용 최고점 저장 변수
 };
 
-// [시간 시스템] 3분에 반 칸(0.5)씩 자동으로 배고픔이 닳는 타이머 연동
+// [배고픔 시스템] 3분에 반 칸(0.5)씩 자동으로 배고픔이 감소하는 타이머
 setInterval(() => {
     if (player.hunger > 0) {
-        player.hunger -= 0.5; // 반 칸 감소
+        player.hunger -= 0.5; // 반 칸 닳음
         if (player.hunger < 0) player.hunger = 0;
     }
-}, 3 * 60 * 1000); // 3분 = 180,000ms
+}, 3 * 60 * 1000); // 3분 = 180000ms
 
 // --- 3. 카메라 시스템 ---
 const camera = {
@@ -140,7 +110,7 @@ const camera = {
     }
 };
 
-// --- 4. 키보드 및 마우스 입력 ---
+// --- 4. 키보드 및 마우스 조작 입력 ---
 const keys = { w: false, a: false, s: false, d: false, ' ': false, shift: false };
 const mouse = { isDown: false, worldX: 0, worldY: 0 };
 
@@ -154,11 +124,9 @@ window.addEventListener('keydown', (e) => {
         if ((key === 'w' || key === ' ') && player.grounded) {
             player.dy = -player.jumpForce;
             player.grounded = false;
-            player.highestY = player.y; // 점프 순간 높이 기록 시작
+            player.highestY = player.y; // 점프 시 최초 높이 기록
         }
-        if (key === 'shift') {
-            player.isCrouching = true;
-        }
+        if (key === 'shift') player.isCrouching = true;
     }
 });
 
@@ -169,9 +137,7 @@ window.addEventListener('keyup', (e) => {
 
     if (key in keys) {
         keys[key] = false;
-        if (key === 'shift') {
-            player.isCrouching = false;
-        }
+        if (key === 'shift') player.isCrouching = false;
     }
 });
 
@@ -191,14 +157,14 @@ function checkCollision(p, b) {
     return p.x < b.x + b.width && p.x + p.width > b.x && p.y < b.y + b.height && p.y + p.height > b.y;
 }
 
-// --- 5. 실시간 물리 로직 및 충돌 처리 ---
+// --- 5. 물리 엔진 및 게임 상태 업데이트 ---
 function update() {
     if (player.isCrouching) {
-        player.height = player.baseHeight * 0.65;
-        player.speed = 3.2;
+        player.height = player.baseHeight * 0.7;
+        player.speed = 3.5;
     } else {
         player.height = player.baseHeight;
-        player.speed = 5.5;
+        player.speed = 6;
     }
 
     if (keys.d) player.dx = player.speed;
@@ -207,17 +173,18 @@ function update() {
 
     player.dy += GRAVITY;
 
-    // 공중에 떠 있는 동안 가장 높은 높이(가장 작은 Y값)를 지속 추적 갱신
+    // 낙하 데미지용 공중 최고 높이(Y값이 가장 작을 때가 최고점) 실시간 갱신
     if (!player.grounded && player.y < player.highestY) {
         player.highestY = player.y;
     }
 
-    const startRow = Math.floor((player.y - 200) / BLOCK_SIZE);
-    const endRow = Math.floor((player.y + 200) / BLOCK_SIZE);
-    const startCol = Math.floor((player.x - 200) / BLOCK_SIZE);
-    const endCol = Math.floor((player.x + 200) / BLOCK_SIZE);
+    // 주변 범위 블록만 타겟팅하여 연산 부하 최소화 (하늘색만 뜨던 버그 해결책)
+    const startRow = Math.floor((player.y - 300) / BLOCK_SIZE);
+    const endRow = Math.floor((player.y + 300) / BLOCK_SIZE);
+    const startCol = Math.floor((player.x - 300) / BLOCK_SIZE);
+    const endCol = Math.floor((player.x + 300) / BLOCK_SIZE);
 
-    // X축 충돌 검사
+    // X축 이동 및 충돌
     player.x += player.dx;
     for (let r = startRow; r <= endRow; r++) {
         for (let c = startCol; c <= endCol; c++) {
@@ -232,7 +199,7 @@ function update() {
         }
     }
 
-    // Y축 충돌 검사 및 낙하 데미지 정밀 연산
+    // Y축 이동 및 충돌 (낙하 데미지 계산 포함)
     const wasInAir = !player.grounded;
     player.y += player.dy;
     player.grounded = false;
@@ -243,23 +210,21 @@ function update() {
             if (block) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dy > 0) { // 하강 중 착지 완료
+                    if (player.dy > 0) { // 하강 중 착지
                         player.y = blockObj.y - player.height;
                         player.dy = 0;
                         player.grounded = true;
 
-                        // [조건 연산] 공중에 떠있다가 바닥에 닿은 순간 낙하 거리 측정
+                        // [낙하 데미지 검증] 5칸 이상 높이에서 낙하했을 때 (5칸 * 60px = 300px)
                         if (wasInAir) {
                             const fallDistance = player.y - player.highestY;
-                            // 블록 5칸 이상의 높이 = 5 * 60px = 300px 이상 추락했을 경우
                             if (fallDistance >= 300) {
-                                player.health -= 1; // 목숨 1칸 감점
+                                player.health -= 1; // 목숨 1칸 감소
                                 if (player.health < 0) player.health = 0;
                             }
-                            // 착지했으므로 최고 높이 추적 리셋
-                            player.highestY = player.y;
+                            player.highestY = player.y; // 착지 후 리셋
                         }
-                    } else if (player.dy < 0) { // 상승 중 천장 부딪힘
+                    } else if (player.dy < 0) { // 상승 중 천장 충돌
                         player.y = blockObj.y + blockObj.height;
                         player.dy = 0;
                     }
@@ -270,72 +235,35 @@ function update() {
 
     camera.update();
 
-    // 마우스 실시간 월드 채굴 파괴
-    let targetR = Math.floor(mouse.worldY / BLOCK_SIZE);
-    let targetC = Math.floor(mouse.worldX / BLOCK_SIZE);
-    const activeBlock = getBlock(targetR, targetC);
-
-    if (mouse.isDown && activeBlock) {
-        activeBlock.damage += 1;
-        if (activeBlock.damage >= 25) {
-            const key = `${targetR},${targetC}`;
-            worldMap[key] = null;
-            if (targetR === GROUND_START_ROW) {
-                decorationMap[`${targetR - 1},${targetC}`] = null;
+    // 마우스 실시간 블록 채굴 파괴
+    if (mouse.isDown) {
+        let targetR = Math.floor(mouse.worldY / BLOCK_SIZE);
+        let targetC = Math.floor(mouse.worldX / BLOCK_SIZE);
+        const activeBlock = getBlock(targetR, targetC);
+        if (activeBlock) {
+            activeBlock.damage += 1;
+            if (activeBlock.damage >= 20) { // 파괴 강도
+                worldMap[`${targetR},${targetC}`] = null;
             }
         }
     }
 }
 
-// --- 6. 화면 그래픽 드로잉 기술부 ---
+// --- 6. 렌더링 드로잉 루프 ---
 function draw() {
+    // 배경 지우기
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // [월드 카메라 공간 레이어] 시작
+    // [카메라 스크롤 레이어 시작]
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    const camStartRow = Math.floor(camera.y / BLOCK_SIZE) - 2;
-    const camEndRow = camStartRow + (canvas.height / BLOCK_SIZE) + 4;
-    const camStartCol = Math.floor(camera.x / BLOCK_SIZE) - 2;
-    const camEndCol = camStartCol + (canvas.width / BLOCK_SIZE) + 4;
+    // 과부하를 방지하기 위해 카메라 화면에 들어오는 안전 범위의 블록만 정확하게 루프 돌려 드로우
+    const camStartRow = Math.max(0, Math.floor(camera.y / BLOCK_SIZE) - 1);
+    const camEndRow = camStartRow + Math.ceil(canvas.height / BLOCK_SIZE) + 2;
+    const camStartCol = Math.floor(camera.x / BLOCK_SIZE) - 1;
+    const camEndCol = camStartCol + Math.ceil(canvas.width / BLOCK_SIZE) + 2;
 
-    // A. 무작위 구름 그리기
-    for (let r = camStartRow; r <= camEndRow; r++) {
-        for (let c = camStartCol; c <= camEndCol; c++) {
-            if (getCloud(r, c)) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-                ctx.fillRect(c * BLOCK_SIZE, r * BLOCK_SIZE + 10, BLOCK_SIZE * 2, BLOCK_SIZE * 0.8);
-                ctx.fillRect(c * BLOCK_SIZE + 20, r * BLOCK_SIZE - 10, BLOCK_SIZE * 1.3, BLOCK_SIZE * 0.8);
-            }
-        }
-    }
-
-    // B. 지표면 무작위 꽃과 잔디 드로잉
-    for (let r = camStartRow; r <= camEndRow; r++) {
-        for (let c = camStartCol; c <= camEndCol; c++) {
-            const deco = getDecoration(r, c);
-            const dx = c * BLOCK_SIZE;
-            const dy = r * BLOCK_SIZE;
-            
-            if (deco === 'LONG_GRASS') {
-                ctx.fillStyle = '#218c74'; 
-                ctx.fillRect(dx + 15, dy + 20, 6, 40);
-                ctx.fillRect(dx + 30, dy + 10, 7, 50);
-                ctx.fillRect(dx + 45, dy + 25, 6, 35);
-            } else if (deco === 'RED_FLOWER') {
-                ctx.fillStyle = '#2ecc71'; ctx.fillRect(dx + 27, dy + 25, 6, 35);
-                ctx.fillStyle = '#e74c3c'; ctx.fillRect(dx + 20, dy + 10, 20, 15);
-                ctx.fillStyle = '#f1c40f'; ctx.fillRect(dx + 27, dy + 15, 6, 5);
-            } else if (deco === 'YEL_FLOWER') {
-                ctx.fillStyle = '#2ecc71'; ctx.fillRect(dx + 27, dy + 25, 6, 35);
-                ctx.fillStyle = '#f1c40f'; ctx.fillRect(dx + 20, dy + 10, 20, 15);
-                ctx.fillStyle = '#e67e22'; ctx.fillRect(dx + 27, dy + 15, 6, 5);
-            }
-        }
-    }
-
-    // C. 마인크래프트 지형 블록 그리기
     for (let r = camStartRow; r <= camEndRow; r++) {
         for (let c = camStartCol; c <= camEndCol; c++) {
             const blockData = getBlock(r, c);
@@ -344,69 +272,106 @@ function draw() {
                 const bx = c * BLOCK_SIZE;
                 const by = r * BLOCK_SIZE;
 
+                // 베이스 블록 색상 채우기
                 ctx.fillStyle = block.main;
                 ctx.fillRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 블록 내부 고유 도트 무늬 디테일
+                // 블록 내부 마인크래프트 무늬 효과
                 ctx.fillStyle = block.detail;
-                ctx.fillRect(bx + 12, by + 16, 10, 10);
-                ctx.fillRect(bx + 36, by + 36, 12, 10);
+                ctx.fillRect(bx + 10, by + 12, 12, 10);
+                ctx.fillRect(bx + 35, by + 35, 14, 10);
 
-                // 전체 격자선 테두리
-                ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-                ctx.lineWidth = 2;
+                // 테두리 격자선
+                ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                ctx.lineWidth = 1.5;
                 ctx.strokeRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
 
-                // 균열 금 크랙
-                const dmg = blockData.damage;
-                if (dmg > 0) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+                // 파괴 크랙 효과
+                if (blockData.damage > 0) {
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
-                    if (dmg >= 5) {
-                        ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + 30, by + 30);
-                        ctx.moveTo(bx + 50, by + 10); ctx.lineTo(bx + 30, by + 30);
-                    }
-                    if (dmg >= 15) {
-                        ctx.moveTo(bx + 30, by + 30); ctx.lineTo(bx + 25, by + 55);
-                    }
+                    ctx.moveTo(bx + 5, by + 5); ctx.lineTo(bx + BLOCK_SIZE - 5, bx + BLOCK_SIZE - 5);
                     ctx.stroke();
                 }
             }
         }
     }
 
-    // D. 정면을 주시하는 피카츄 묘사 레이어
+    // 정면 피카츄 캐릭터 드로잉
     ctx.save();
     ctx.translate(player.x, player.y);
     const hRatio = player.height / player.baseHeight;
 
-    ctx.fillStyle = player.color; // 몸통 기본 사각형
+    ctx.fillStyle = player.color; // 몸통
     ctx.fillRect(0, 14 * hRatio, player.width, player.height - (14 * hRatio));
 
-    ctx.fillStyle = '#573d26'; // 정면이라 대칭구조로 양 끝에 살짝 스치는 등 줄무늬
-    ctx.fillRect(0, 28 * hRatio, 3, 6 * hRatio);
-    ctx.fillRect(player.width - 3, 28 * hRatio, 3, 6 * hRatio);
+    ctx.fillStyle = '#573d26'; // 줄무늬 조각
+    ctx.fillRect(0, 26 * hRatio, 3, 6 * hRatio);
+    ctx.fillRect(player.width - 3, 26 * hRatio, 3, 6 * hRatio);
 
-    ctx.fillStyle = player.color; // 양쪽 정면 노란 귀
+    ctx.fillStyle = player.color; // 귀
     ctx.fillRect(4, 0, 10, 14 * hRatio);
     ctx.fillRect(player.width - 14, 0, 10, 14 * hRatio);
-    
-    ctx.fillStyle = '#000'; // 귀 끝 검은 도트포인트
+    ctx.fillStyle = '#000'; // 귀 끝 검은색
     ctx.fillRect(4, 0, 10, 5 * hRatio);
     ctx.fillRect(player.width - 14, 0, 10, 5 * hRatio);
 
-    if (player.isCrouching) { // Shift 일자눈
+    if (player.isCrouching) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.beginPath();
         ctx.moveTo(8, 22 * hRatio); ctx.lineTo(16, 22 * hRatio);
         ctx.moveTo(player.width - 16, 22 * hRatio); ctx.lineTo(player.width - 8, 22 * hRatio);
         ctx.stroke();
-    } else { // 기본 눈동자 동그라미 두 개
-        ctx.fillStyle = '#000';
-        ctx.fillRect(9, 21, 6, 6);
-        ctx.fillRect(player.width - 15, 21, 6, 6);
+    } else {
+        ctx.fillStyle = '#000'; // 눈
+        ctx.fillRect(9, 21 * hRatio, 6, 6);
+        ctx.fillRect(player.width - 15, 21 * hRatio, 6, 6);
     }
 
-    ctx.fillStyle = '#FF0000'; // 양 볼 대칭 볼터치
-    ctx.fillRect(2, 30 * hRatio, 7, 7 * hRatio);
-    ctx.fillRect(player.width - 9, 30 * h
+    ctx.fillStyle = '#FF0000'; // 볼터치
+    ctx.fillRect(2, 30 * hRatio, 8, 8 * hRatio);
+    ctx.fillRect(player.width - 10, 30 * hRatio, 8, 8 * hRatio);
+
+    ctx.restore();
+    ctx.restore(); // [카메라 스크롤 레이어 해제 및 리셋 완료]
+
+    // --- 7. 마인크래프트 원본 디자인 목숨(13) & 배고픔(13) 고정 UI 그리기 ---
+    drawMinecraftUI();
+}
+
+// 마인크래프트 오리지널 디자인 UI 구현 함수
+function drawMinecraftUI() {
+    const spacing = 32;               // 하트 및 고기 간격
+    const uiTotalWidth = 13 * spacing; // 13칸 전체 가로 크기
+    const startX = canvas.width - uiTotalWidth - 40; // 화면 우측 상단 배치 정렬
+    const startY = 40;
+
+    // A. 마인크래프트 하트 목숨칸 (총 13칸 정렬)
+    for (let i = 0; i < 13; i++) {
+        const hx = startX + (i * spacing);
+        const hy = startY;
+
+        // 기본 빈 하트 검은색 틀 바탕 고형화
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(hx + 4, hy, 8, 4);
+        ctx.fillRect(hx + 14, hy, 8, 4);
+        ctx.fillRect(hx, hy + 4, 26, 8);
+        ctx.fillRect(hx + 2, hy + 12, 22, 4);
+        ctx.fillRect(hx + 6, hy + 16, 14, 4);
+        ctx.fillRect(hx + 11, hy + 20, 4, 4);
+
+        // 안쪽 회색 빈 칸 베이스 배경
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(hx + 6, hy + 2, 4, 2);
+        ctx.fillRect(hx + 16, hy + 2, 4, 2);
+        ctx.fillRect(hx + 2, hy + 6, 22, 4);
+        ctx.fillRect(hx + 4, hy + 10, 18, 4);
+
+        // 잔여 하트 개수에 맞춰 오리지널 마인크래프트 레드 하트 픽셀 채우기
+        if (i < player.health) {
+            ctx.fillStyle = '#ff2222'; // 강렬한 하트 레드색
+            ctx.fillRect(hx + 4, hy, 8, 4);
+            ctx.fillRect(hx + 14, hy, 8, 4);
+            ctx.fillRect(hx, hy + 4, 26, 8);
+            ctx.fillRect(hx + 2, hy + 12, 22, 4);
+            ctx.fillRect(hx + 6, hy + 16, 14, 4);
