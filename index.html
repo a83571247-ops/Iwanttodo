@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>마리오 거대 그리드 게임 (500x300)</title>
+    <title>마리오 2000x1500 완성판 게임</title>
     <style>
         body {
             margin: 0;
@@ -13,81 +13,77 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            overflow: auto; /* 화면이 매우 크므로 스크롤이 가능하도록 설정 */
+            overflow: auto; /* 화면이 크므로 스크롤 허용 */
         }
         canvas {
-            background-color: #74b9ff; /* 하늘색 배경 */
+            background-color: #74b9ff; /* 선명한 하늘색 배경 */
             border: 6px solid #fff;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            image-rendering: pixelated; /* 픽셀 매끄럽게 처리 */
+            image-rendering: pixelated;
         }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas"></canvas>
+<canvas id="gameCanvas" width="2000" height="1500"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 거대 그리드 및 화면 크기 설정 ---
-const BLOCK_SIZE = 4;   // 블록 한 칸의 크기 (4x4 픽셀)
-const COLS = 500;       // 가로 500칸
-const ROWS = 300;       // 세로 300칸
+// --- 1. 기본 설정 및 지형 크기 정의 ---
+const BLOCK_SIZE = 50; // 블록 한 칸을 50x50 픽셀 크기로 큼직하게 설정
+const COLS = canvas.width / BLOCK_SIZE;  // 가로 40칸
+const ROWS = canvas.height / BLOCK_SIZE; // 세로 30칸
 
-canvas.width = COLS * BLOCK_SIZE;  // 2000 픽셀
-canvas.height = ROWS * BLOCK_SIZE; // 1200 픽셀
+const GRAVITY = 0.5;
 
-const GRAVITY = 0.2; // 그리드 크기에 맞춘 중력 최적화
-
-// --- 2. 블록 종류 및 색상 설정 ---
+// 블록 색상 정의 (흙, 돌, 석탄, 다이아몬드)
 const BLOCK_TYPES = {
-    DIRT:    '#866043', // 흙
-    STONE:   '#737373', // 돌
-    COAL:    '#2c2c2c', // 석탄
-    DIAMOND: '#4dedf4'  // 다이아몬드
+    DIRT:    { main: '#866043', detail: '#573d26' },
+    STONE:   { main: '#737373', detail: '#525252' },
+    COAL:    { main: '#3c3c3c', detail: '#111111' },
+    DIAMOND: { main: '#6d8a8c', detail: '#4dedf4' }
 };
 const BLOCK_LIST = ['DIRT', 'STONE', 'COAL', 'DIAMOND'];
 
-// --- 3. 2차원 배열 지형 생성 (맨 아래에서부터 5칸 땅 설정) ---
+// --- 2. 2차원 배열 지형 생성 (아래에서부터 확실하게 5칸 생성) ---
 const map = [];
 for (let r = 0; r < ROWS; r++) {
     map[r] = [];
     for (let c = 0; c < COLS; c++) {
-        // 맨 밑에서부터 5칸 (ROWS - 5 이상)에 무작위 지형 배치
+        // 맨 아래에서부터 5줄(ROWS-5 줄부터 맨 밑 ROWS-1 줄까지)에 무작위 배치
         if (r >= ROWS - 5) {
             const randomType = BLOCK_LIST[Math.floor(Math.random() * BLOCK_LIST.length)];
             map[r][c] = BLOCK_TYPES[randomType];
         } else {
-            map[r][c] = null; // 위쪽 295칸은 전부 하늘
+            map[r][c] = null; // 위쪽 공간은 모두 하늘
         }
     }
 }
 
-// --- 4. 캐릭터(마リオ) 설정 ---
-// 아래에서 5칸이 땅이므로, 땅 바로 위(세로 295번째 칸)에서 시작
-// 거대해진 화면 시스템에 맞춰 캐릭터 크기도 그리드 단위로 최적화
+// --- 3. 캐릭터(마리오) 설정 ---
+// 아래에서 5칸이 땅이므로, 땅 바로 위(세로 25번째 칸 표면)에 배치하여 갇힘 방지
 const player = {
-    x: 200,
-    y: (ROWS - 15) * BLOCK_SIZE, 
-    width: 16,  // 가로 4칸 크기
-    height: 24, // 세로 6칸 크기
+    x: 150,
+    y: (ROWS - 5) * BLOCK_SIZE - 60, // 땅 표면 바로 위
+    width: 36,
+    height: 50,
     color: '#e60012',
     dx: 0,
     dy: 0,
-    speed: 4,
-    jumpForce: 6,
+    speed: 6,
+    jumpForce: 13,
     grounded: false
 };
 
-// --- 5. 키보드 입력 설정 ---
+// --- 4. 키보드 방향키 입력 제어 ---
 const keys = { ArrowRight: false, ArrowLeft: false, ArrowUp: false };
 
 window.addEventListener('keydown', (e) => {
     if (e.key in keys) {
         keys[e.key] = true;
-        // 땅에 확실히 서 있을 때만 위쪽 방향키로 점프
+        // 위쪽 방향키를 누르고 바닥에 서 있을 때만 점프 시동
         if (e.key === 'ArrowUp' && player.grounded) {
             player.dy = -player.jumpForce;
             player.grounded = false;
@@ -99,7 +95,7 @@ window.addEventListener('keyup', (e) => {
     if (e.key in keys) keys[e.key] = false;
 });
 
-// --- 6. 충돌 판정 함수 (AABB 방식) ---
+// --- 5. AABB 사각형 충돌 감지 공식 ---
 function checkCollision(p, b) {
     return p.x < b.x + b.width &&
            p.x + p.width > b.x &&
@@ -107,57 +103,58 @@ function checkCollision(p, b) {
            p.y + p.height > b.y;
 }
 
-// --- 7. 물리 업데이트 및 완벽한 벽 통과 방지 로직 ---
+// --- 6. 물리 업데이트 및 완벽한 벽/땅 통과 방지 알고리즘 ---
 function update() {
-    // 좌우 이동 제어
+    // 이동키 입력 제어
     if (keys.ArrowRight) player.dx = player.speed;
     else if (keys.ArrowLeft) player.dx = -player.speed;
     else player.dx = 0;
 
-    // 중력 가속도 추가
+    // 중력 작동
     player.dy += GRAVITY;
 
-    // 1. X축 이동 계산 및 블록 충돌 검사 (좌우 벽 통과 방지)
+    // [X축 처리] 좌우 이동 후 벽과 충돌하는지 체크
     player.x += player.dx;
     
-    // 화면 좌우 경계 이탈 방지
+    // 화면 좌우 밖으로 못 나가게 가두기
     if (player.x < 0) player.x = 0;
     if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-    // 주변 블록 탐색 및 충돌 시 밀어내기
-    for (let r = ROWS - 6; r < ROWS; r++) { // 효율적인 연산을 위해 땅 근처 레이어만 루프 검사
+    // X축 기준 블록 충돌 시 밀어내기 (벽 통과 차단)
+    for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (map[r] && map[r][c]) {
+            if (map[r][c]) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dx > 0) player.x = blockObj.x - player.width;      // 오른쪽 벽 충돌
-                    else if (player.dx < 0) player.x = blockObj.x + blockObj.width; // 왼쪽 벽 충돌
+                    if (player.dx > 0) player.x = blockObj.x - player.width;      // 우측 벽 충돌
+                    else if (player.dx < 0) player.x = blockObj.x + blockObj.width; // 좌측 벽 충돌
                 }
             }
         }
     }
 
-    // 2. Y축 이동 계산 및 블록 충돌 검사 (바닥 착지 및 천장)
+    // [Y축 처리] 상하 이동(점프/추락) 후 땅과 충돌하는지 체크
     player.y += player.dy;
     player.grounded = false;
 
-    // 화면 맨 아래로 완전히 꺼지는 현상 방지 리셋선
+    // 화면 맨 아래로 빠지는 예외 방지선
     if (player.y + player.height > canvas.height) {
         player.y = canvas.height - (5 * BLOCK_SIZE) - player.height;
         player.dy = 0;
         player.grounded = true;
     }
 
-    for (let r = ROWS - 6; r < ROWS; r++) {
+    // Y축 기준 블록 충돌 시 밀어내기 (바닥 착지 및 천장 차단)
+    for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (map[r] && map[r][c]) {
+            if (map[r][c]) {
                 const blockObj = { x: c * BLOCK_SIZE, y: r * BLOCK_SIZE, width: BLOCK_SIZE, height: BLOCK_SIZE };
                 if (checkCollision(player, blockObj)) {
-                    if (player.dy > 0) { // 아래로 추락하다가 땅에 닿음
+                    if (player.dy > 0) { // 아래로 떨어지다 발이 땅에 닿음
                         player.y = blockObj.y - player.height;
                         player.dy = 0;
                         player.grounded = true;
-                    } else if (player.dy < 0) { // 위로 점프하다 머리가 지형에 부딪힘
+                    } else if (player.dy < 0) { // 위로 점프하다 머리가 블록에 부딪힘
                         player.y = blockObj.y + blockObj.height;
                         player.dy = 0;
                     }
@@ -167,31 +164,54 @@ function update() {
     }
 }
 
-// --- 8. 거대 그래픽 렌더링 ---
+// --- 7. 그래픽 렌더링 (화면에 그리기) ---
 function draw() {
-    // 화면 전체 청소 (하늘색 배경 유지)
+    // 이전 화면 깨끗하게 지우기
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 500x300 격자 기반 무작위 땅 블록 그리기
+    // 하단 5칸 무작위 픽셀 지형 그리기
     for (let r = ROWS - 5; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
             if (map[r][c]) {
-                ctx.fillStyle = map[r][c];
-                ctx.fillRect(c * BLOCK_SIZE, r * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                const block = map[r][c];
+                const bx = c * BLOCK_SIZE;
+                const by = r * BLOCK_SIZE;
+
+                // 블록 본체
+                ctx.fillStyle = block.main;
+                ctx.fillRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
+
+                // 블록 내부 픽셀 문양 장식
+                ctx.fillStyle = block.detail;
+                ctx.fillRect(bx + 8, by + 10, 10, 10);
+                ctx.fillRect(bx + 28, by + 26, 12, 10);
+
+                // 블록 외곽 그리드 선선하게 추가
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(bx, by, BLOCK_SIZE, BLOCK_SIZE);
             }
         }
     }
 
-    // 캐릭터(마리오 사각형) 그리기
+    // 캐릭터(마리오 사각형 모양) 그리기
     ctx.fillStyle = player.color;
     ctx.fillRect(player.x, player.y, player.width, player.height);
     
-    // 캐릭터 디자인 디테일 (파란 멜빵바지 영역 레이어)
+    // 캐릭터 파란색 멜빵바지 표현
     ctx.fillStyle = '#0020b8';
-    ctx.fillRect(player.x + 2, player.y + 10, player.width - 4, player.height - 10);
+    ctx.fillRect(player.x + 4, player.y + 20, player.width - 8, player.height - 20);
+
+    // 눈동자 픽셀 장식 (좌우 방향 주시)
+    ctx.fillStyle = '#000';
+    if (keys.ArrowLeft) {
+        ctx.fillRect(player.x + 6, player.y + 8, 6, 6);
+    } else {
+        ctx.fillRect(player.x + player.width - 12, player.y + 8, 6, 6);
+    }
 }
 
-// --- 9. 엔진 기동 ---
+// --- 8. 실시간 메인 루프 실행 ---
 function gameLoop() {
     update();
     draw();
